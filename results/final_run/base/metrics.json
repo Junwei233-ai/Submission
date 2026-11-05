@@ -1,0 +1,82 @@
+{
+  "park": {
+    "best_epoch": 187,
+    "epochs_run": 200,
+    "validation_loss": 0.005871566943824291,
+    "export_max_error": 4.770965531530891e-07,
+    "samples": 973,
+    "batch_size": 48,
+    "validation_position_error_m": {
+      "median": 0.04324844580768074,
+      "p95": 0.09848505323151557
+    },
+    "validation_yaw_error_rad": {
+      "median": 0.04834096946843469,
+      "p95": 0.10058908865655733
+    }
+  },
+  "wheels": {
+    "best_epoch": 9,
+    "epochs_run": 24,
+    "validation_loss": 0.16472986340522766,
+    "export_max_error": 2.2239750805397307e-06,
+    "samples": 1216788,
+    "batch_size": 1024,
+    "validation_mae_rad_s": [
+      0.4477788540809824,
+      0.4552720842568101,
+      0.4572098486056814,
+      0.4471038341249009
+    ]
+  },
+  "stop": {
+    "best_epoch": 1,
+    "epochs_run": 16,
+    "validation_loss": 0.11597385257482529,
+    "export_max_error": 9.324354728335038e-06,
+    "samples": 1792142,
+    "batch_size": 1024,
+    "validation_accuracy": 0.9566637978571539
+  },
+  "latch_timing_validation_open_loop": {
+    "1": {
+      "never_fired": 9,
+      "early_over_100": 146,
+      "median_offset": -143.0,
+      "mean_abs_offset": 386.0
+    },
+    "5": {
+      "never_fired": 9,
+      "early_over_100": 143,
+      "median_offset": -139.0,
+      "mean_abs_offset": 382.40201005025125
+    },
+    "10": {
+      "never_fired": 9,
+      "early_over_100": 138,
+      "median_offset": -134.0,
+      "mean_abs_offset": 377.93467336683415
+    },
+    "20": {
+      "never_fired": 9,
+      "early_over_100": 121,
+      "median_offset": -124.0,
+      "mean_abs_offset": 369.1105527638191
+    },
+    "50": {
+      "never_fired": 9,
+      "early_over_100": 94,
+      "median_offset": -94.0,
+      "mean_abs_offset": 343.7638190954774
+    },
+    "100": {
+      "never_fired": 9,
+      "early_over_100": 63,
+      "median_offset": -44.0,
+      "mean_abs_offset": 287.6532663316583
+    }
+  },
+  "latch_steps": 100,
+  "training_wall_s": 268.2309295479972,
+  "test_data_opened": false
+}

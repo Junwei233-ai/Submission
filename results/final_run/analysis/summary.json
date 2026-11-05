@@ -1,0 +1,283 @@
+{
+  "seeds": {
+    "42 (frozen)": {
+      "success": 207,
+      "scenes": 208,
+      "wilson95": [
+        0.9732738381941473,
+        0.9991508413777597
+      ],
+      "mean_success_time_s": 9.397560386473783,
+      "best_epoch": 78,
+      "epochs_run": 80,
+      "validation_wheel_loss": 0.05367354547849217,
+      "validation_arm_loss": 0.1632664574598738,
+      "validation_stop_loss": 0.021451955199059587,
+      "latch_ticks": 1,
+      "training_wall_s": 1831.408936249998
+    },
+    "1": {
+      "success": 207,
+      "scenes": 208,
+      "wilson95": [
+        0.9732738381941473,
+        0.9991508413777597
+      ],
+      "mean_success_time_s": 9.335739130435048,
+      "best_epoch": 52,
+      "epochs_run": 60,
+      "validation_wheel_loss": 0.06652586105231506,
+      "validation_arm_loss": 0.17118527153543003,
+      "validation_stop_loss": 0.02113880257226942,
+      "latch_ticks": 2,
+      "training_wall_s": 1572.0066429319995
+    },
+    "2": {
+      "success": 208,
+      "scenes": 208,
+      "wilson95": [
+        0.9818656958784301,
+        1.0000000000000002
+      ],
+      "mean_success_time_s": 9.25775000000031,
+      "best_epoch": 78,
+      "epochs_run": 80,
+      "validation_wheel_loss": 0.05569676382327734,
+      "validation_arm_loss": 0.17127626465090862,
+      "validation_stop_loss": 0.03128361975759132,
+      "latch_ticks": 3,
+      "training_wall_s": 1994.3051486089971
+    }
+  },
+  "learning_curve": {
+    "0.1": {
+      "train_trajectories": 97,
+      "success": 157,
+      "scenes": 208,
+      "wilson95": [
+        0.6920704782076816,
+        0.8083033860380566
+      ],
+      "mean_success_time_s": 12.441299363058077,
+      "best_epoch": 46,
+      "epochs_run": 54,
+      "validation_wheel_loss": 0.28301203889134435,
+      "validation_arm_loss": 0.858431708133118,
+      "validation_stop_loss": 0.16209372022008842,
+      "latch_ticks": 20,
+      "training_wall_s": 341.67031788799795
+    },
+    "0.25": {
+      "train_trajectories": 243,
+      "success": 193,
+      "scenes": 208,
+      "wilson95": [
+        0.8844368428914631,
+        0.9558136083891164
+      ],
+      "mean_success_time_s": 9.954036269430356,
+      "best_epoch": 67,
+      "epochs_run": 75,
+      "validation_wheel_loss": 0.15587619564781968,
+      "validation_arm_loss": 0.4649609457829548,
+      "validation_stop_loss": 0.10842258959682212,
+      "latch_ticks": 20,
+      "training_wall_s": 681.0661838249944
+    },
+    "0.5": {
+      "train_trajectories": 486,
+      "success": 195,
+      "scenes": 208,
+      "wilson95": [
+        0.8960177487024101,
+        0.9631147351912162
+      ],
+      "mean_success_time_s": 9.705389743590024,
+      "best_epoch": 73,
+      "epochs_run": 80,
+      "validation_wheel_loss": 0.08637960751358817,
+      "validation_arm_loss": 0.2490860126835943,
+      "validation_stop_loss": 0.04241429076999162,
+      "latch_ticks": 5,
+      "training_wall_s": 1159.2211103620066
+    },
+    "1.0": {
+      "train_trajectories": 973,
+      "success": 207,
+      "scenes": 208,
+      "wilson95": [
+        0.9732738381941473,
+        0.9991508413777597
+      ],
+      "mean_success_time_s": 9.397560386473783,
+      "best_epoch": 78,
+      "epochs_run": 80,
+      "validation_wheel_loss": 0.05367354547849217,
+      "validation_arm_loss": 0.1632664574598738,
+      "validation_stop_loss": 0.021451955199059587,
+      "latch_ticks": 1,
+      "training_wall_s": 1831.408936249998
+    }
+  },
+  "gravity_ablation": {
+    "kp200_kd30_lead0.2": {
+      "with_gravity": {
+        "success": 207,
+        "scenes": 208,
+        "wilson95": [
+          0.9732738381941473,
+          0.9991508413777597
+        ],
+        "mean_success_time_s": 9.397560386473783
+      },
+      "without_gravity": {
+        "success": 207,
+        "scenes": 208,
+        "wilson95": [
+          0.9732738381941473,
+          0.9991508413777597
+        ],
+        "mean_success_time_s": 9.375425120773329
+      },
+      "paired": {
+        "only_first": 0,
+        "only_second": 0,
+        "mcnemar_p": 1.0
+      },
+      "median_final_error_without_m": 0.009989117238845671
+    },
+    "kp50_kd30_lead0.1": {
+      "with_gravity": {
+        "success": 203,
+        "scenes": 208,
+        "wilson95": [
+          0.9449709677149583,
+          0.9896896466308549
+        ],
+        "mean_success_time_s": 9.666354679803364
+      },
+      "without_gravity": {
+        "success": 57,
+        "scenes": 208,
+        "wilson95": [
+          0.21793267567602156,
+          0.33833955791738035
+        ],
+        "mean_success_time_s": 12.758491228070648
+      },
+      "paired": {
+        "only_first": 147,
+        "only_second": 1,
+        "mcnemar_p": 8.35173884737591e-43
+      },
+      "median_final_error_without_m": 0.3186939068629035
+    }
+  },
+  "hold": {
+    "B": {
+      "scenes": 300,
+      "success_1cm": 296,
+      "hold_completed": 296,
+      "held_within_1cm": 286,
+      "held_within_2cm": 296,
+      "hold_max_error_median_m": 0.00998912525757072,
+      "hold_max_error_p95_m": 0.009999831533772673,
+      "end_error_median_m": 0.0005749483473636211,
+      "end_error_p95_m": 0.0021278828033739327,
+      "last_second_max_median_m": 0.002160634971064384,
+      "last_second_max_p95_m": 0.0036041958904641895,
+      "last_second_within_1cm": 296,
+      "success_and_held_1cm": 286,
+      "wilson95_success_and_held_1cm": [
+        0.9232019646862172,
+        0.9720013254491692
+      ]
+    },
+    "v3": {
+      "scenes": 300,
+      "success_1cm": 289,
+      "hold_completed": 289,
+      "held_within_1cm": 171,
+      "held_within_2cm": 258,
+      "hold_max_error_median_m": 0.0099956757079821,
+      "hold_max_error_p95_m": 0.026781502589835637,
+      "end_error_median_m": 0.002493557392263223,
+      "end_error_p95_m": 0.008082023406555457,
+      "last_second_max_median_m": 0.005660862789075592,
+      "last_second_max_p95_m": 0.018963415152285796,
+      "last_second_within_1cm": 228,
+      "success_and_held_1cm": 171,
+      "wilson95_success_and_held_1cm": [
+        0.5134401182890381,
+        0.6247898015112788
+      ]
+    },
+    "expert": {
+      "scenes": 300,
+      "success_1cm": 293,
+      "hold_completed": 293,
+      "held_within_1cm": 286,
+      "held_within_2cm": 293,
+      "hold_max_error_median_m": 0.009989166108536503,
+      "hold_max_error_p95_m": 0.009999065300435886,
+      "end_error_median_m": 0.000594660351280852,
+      "end_error_p95_m": 0.0020904530050643013,
+      "last_second_max_median_m": 0.002369614129803984,
+      "last_second_max_p95_m": 0.0033670041298427,
+      "last_second_within_1cm": 293,
+      "success_and_held_1cm": 286,
+      "wilson95_success_and_held_1cm": [
+        0.9232019646862172,
+        0.9720013254491692
+      ]
+    },
+    "diag_v3_kp100_kd30_lead0.1": {
+      "scenes": 300,
+      "success_1cm": 289,
+      "hold_completed": 289,
+      "held_within_1cm": 278,
+      "held_within_2cm": 289,
+      "hold_max_error_median_m": 0.009989746237912657,
+      "hold_max_error_p95_m": 0.009999855528368073,
+      "end_error_median_m": 0.000663547097259911,
+      "end_error_p95_m": 0.0021449123768074547,
+      "last_second_max_median_m": 0.0022786458504292554,
+      "last_second_max_p95_m": 0.004135735536429216,
+      "last_second_within_1cm": 289,
+      "success_and_held_1cm": 278,
+      "wilson95_success_and_held_1cm": [
+        0.8914679042010732,
+        0.9510763688675256
+      ]
+    },
+    "diag_B_kp100_kd10_lead0.1": {
+      "scenes": 300,
+      "success_1cm": 296,
+      "hold_completed": 296,
+      "held_within_1cm": 144,
+      "held_within_2cm": 254,
+      "hold_max_error_median_m": 0.010154524669788188,
+      "hold_max_error_p95_m": 0.03251069997949678,
+      "end_error_median_m": 0.0023211414487188334,
+      "end_error_p95_m": 0.008093285117600445,
+      "last_second_max_median_m": 0.006126891681580987,
+      "last_second_max_p95_m": 0.02387060658792525,
+      "last_second_within_1cm": 217,
+      "success_and_held_1cm": 144,
+      "wilson95_success_and_held_1cm": [
+        0.4240757908015887,
+        0.5364299463983206
+      ]
+    },
+    "B_vs_expert_held_1cm": {
+      "only_first": 8,
+      "only_second": 8,
+      "mcnemar_p": 1.0
+    },
+    "B_vs_v3_held_1cm": {
+      "only_first": 122,
+      "only_second": 7,
+      "mcnemar_p": 3.112832046645853e-28
+    }
+  }
+}

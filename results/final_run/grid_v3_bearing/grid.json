@@ -1,0 +1,161 @@
+{
+  "rule": "max 1cm successes, then min mean success time, then min mean clipped fraction",
+  "chosen": {
+    "name": "kp100_kd10_lead0.1",
+    "kp": 100,
+    "kd": 10,
+    "lead": 0.1,
+    "success_1cm": 205,
+    "success_5cm": 205,
+    "scenes": 208,
+    "mean_success_time_s": 9.54328292682946,
+    "mean_clipped_fraction": 0.0,
+    "median_min_error_m": 0.009970246247842155
+  },
+  "table": [
+    {
+      "name": "kp100_kd10_lead0.1",
+      "kp": 100,
+      "kd": 10,
+      "lead": 0.1,
+      "success_1cm": 205,
+      "success_5cm": 205,
+      "scenes": 208,
+      "mean_success_time_s": 9.54328292682946,
+      "mean_clipped_fraction": 0.0,
+      "median_min_error_m": 0.009970246247842155
+    },
+    {
+      "name": "kp100_kd10_lead0.2",
+      "kp": 100,
+      "kd": 10,
+      "lead": 0.2,
+      "success_1cm": 205,
+      "success_5cm": 205,
+      "scenes": 208,
+      "mean_success_time_s": 9.544175609756289,
+      "mean_clipped_fraction": 0.0,
+      "median_min_error_m": 0.009970246247842155
+    },
+    {
+      "name": "kp50_kd30_lead0.2",
+      "kp": 50,
+      "kd": 30,
+      "lead": 0.2,
+      "success_1cm": 204,
+      "success_5cm": 205,
+      "scenes": 208,
+      "mean_success_time_s": 9.73292647058853,
+      "mean_clipped_fraction": 0.017240089618882248,
+      "median_min_error_m": 0.009991287977388946
+    },
+    {
+      "name": "kp200_kd30_lead0.2",
+      "kp": 200,
+      "kd": 30,
+      "lead": 0.2,
+      "success_1cm": 203,
+      "success_5cm": 203,
+      "scenes": 208,
+      "mean_success_time_s": 9.509724137931252,
+      "mean_clipped_fraction": 0.011636931807040339,
+      "median_min_error_m": 0.009989160918913165
+    },
+    {
+      "name": "kp200_kd30_lead0.1",
+      "kp": 200,
+      "kd": 30,
+      "lead": 0.1,
+      "success_1cm": 203,
+      "success_5cm": 203,
+      "scenes": 208,
+      "mean_success_time_s": 9.516315270936175,
+      "mean_clipped_fraction": 0.007639028430245291,
+      "median_min_error_m": 0.009989160918913165
+    },
+    {
+      "name": "kp100_kd30_lead0.2",
+      "kp": 100,
+      "kd": 30,
+      "lead": 0.2,
+      "success_1cm": 203,
+      "success_5cm": 203,
+      "scenes": 208,
+      "mean_success_time_s": 9.522384236453428,
+      "mean_clipped_fraction": 0.008832735419560983,
+      "median_min_error_m": 0.00998869521297191
+    },
+    {
+      "name": "kp100_kd30_lead0.1",
+      "kp": 100,
+      "kd": 30,
+      "lead": 0.1,
+      "success_1cm": 203,
+      "success_5cm": 203,
+      "scenes": 208,
+      "mean_success_time_s": 9.598719211822923,
+      "mean_clipped_fraction": 0.0103403634725403,
+      "median_min_error_m": 0.009988795176711257
+    },
+    {
+      "name": "kp200_kd10_lead0.1",
+      "kp": 200,
+      "kd": 10,
+      "lead": 0.1,
+      "success_1cm": 202,
+      "success_5cm": 202,
+      "scenes": 208,
+      "mean_success_time_s": 9.61123762376268,
+      "mean_clipped_fraction": 0.0,
+      "median_min_error_m": 0.009971781649479004
+    },
+    {
+      "name": "kp200_kd10_lead0.2",
+      "kp": 200,
+      "kd": 10,
+      "lead": 0.2,
+      "success_1cm": 202,
+      "success_5cm": 202,
+      "scenes": 208,
+      "mean_success_time_s": 9.612856435643867,
+      "mean_clipped_fraction": 0.006016879939308642,
+      "median_min_error_m": 0.009971781649479004
+    },
+    {
+      "name": "kp50_kd10_lead0.2",
+      "kp": 50,
+      "kd": 10,
+      "lead": 0.2,
+      "success_1cm": 201,
+      "success_5cm": 201,
+      "scenes": 208,
+      "mean_success_time_s": 9.661920398010064,
+      "mean_clipped_fraction": 0.0010474759615384617,
+      "median_min_error_m": 0.009967234466441877
+    },
+    {
+      "name": "kp50_kd30_lead0.1",
+      "kp": 50,
+      "kd": 30,
+      "lead": 0.1,
+      "success_1cm": 198,
+      "success_5cm": 204,
+      "scenes": 208,
+      "mean_success_time_s": 10.104626262626677,
+      "mean_clipped_fraction": 0.012878770013402338,
+      "median_min_error_m": 0.009990670300410641
+    },
+    {
+      "name": "kp50_kd10_lead0.1",
+      "kp": 50,
+      "kd": 10,
+      "lead": 0.1,
+      "success_1cm": 189,
+      "success_5cm": 199,
+      "scenes": 208,
+      "mean_success_time_s": 11.527888888889796,
+      "mean_clipped_fraction": 0.003669951923076923,
+      "median_min_error_m": 0.00998129538173296
+    }
+  ]
+}

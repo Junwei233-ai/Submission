@@ -1,0 +1,67 @@
+# macOS metadata (including files copied from external drives)
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100/
+.Trashes/
+.TemporaryItems/
+.fseventsd/
+.VolumeIcon.icns
+.DocumentRevisions-V100/
+
+# Windows metadata
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Python bytecode, test and tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+
+# Local environments and packaging outputs
+.venv/
+venv/
+env/
+.pixi/
+.tox/
+.nox/
+build/
+dist/
+*.egg-info/
+
+# Editor-local settings and temporary files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local secrets; keep a shareable example if provided
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated experiment data, checkpoints and logs
+# Keep configs/, scenarios/ and models/ (URDF/meshes) versioned.
+/artifacts/
+/data/
+/trajectories/
+/checkpoints/
+/runs/
+/logs/
+/wandb/
+*.log
+
+# results/ is a small, versioned snapshot of the final run (summaries, frozen models, splits);
+# the full per-scene outputs stay in artifacts/ and are not committed.

@@ -1,0 +1,53 @@
+{
+  "tolerance": 3,
+  "rows": [
+    {
+      "item": "v3 validation, own grid gains",
+      "gains": "100/10/0.1",
+      "local": 205,
+      "planned": 208,
+      "reported": 203,
+      "reproduced": true
+    },
+    {
+      "item": "B validation, own grid gains",
+      "gains": "200/30/0.2",
+      "local": 207,
+      "planned": 208,
+      "reported": 202,
+      "reproduced": false
+    },
+    {
+      "item": "v3 test, own grid gains",
+      "gains": "100/10/0.1",
+      "local": 204,
+      "planned": 210,
+      "reported": 205,
+      "reproduced": true
+    },
+    {
+      "item": "v3 test, 100/30/0.1",
+      "gains": "100/30/0.1",
+      "local": 203,
+      "planned": 210,
+      "reported": 204,
+      "reproduced": true
+    },
+    {
+      "item": "B test, own grid gains",
+      "gains": "200/30/0.2",
+      "local": 208,
+      "planned": 210,
+      "reported": 206,
+      "reproduced": true
+    },
+    {
+      "item": "expert test",
+      "gains": "expert",
+      "local": 209,
+      "planned": 210,
+      "reported": null,
+      "reproduced": null
+    }
+  ]
+}

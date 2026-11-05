@@ -1,0 +1,26 @@
+{
+  "scenes": 40,
+  "process_errors": 0,
+  "success_1cm": 38,
+  "rate_1cm": 0.95,
+  "wilson95_1cm": [
+    0.834958291820748,
+    0.9861796228538989
+  ],
+  "success_5cm": 38,
+  "rate_5cm": 0.95,
+  "wilson95_5cm": [
+    0.834958291820748,
+    0.9861796228538989
+  ],
+  "median_final_error_m": 0.009992574671666157,
+  "mean_success_time_s": 11.729710526314918,
+  "base_latched": 38,
+  "median_base_done_s": 8.645000000000648,
+  "median_base_offset_from_rule_m": 0.07781041863355206,
+  "median_abs_base_yaw_offset_rad": 0.0742796949492176,
+  "stop_reasons": {
+    "step_limit": 2,
+    "success": 38
+  }
+}
