@@ -1,7 +1,7 @@
 """Build the report's figures (PDF) and LaTeX tables from the versioned result summaries.
 
 Every number in report/tables/*.tex and report/figures/*.pdf is read from results/final_run/
-(suite/summary.json, analysis/summary.json, grid_*/grid.json, gru_*/gru.json), so the report cannot
+(suite/summary.json, analysis/summary.json, memory/summary.json, grid_*/grid.json, gru_*/gru.json), so the report cannot
 drift from the code. The hold-trace figure needs per-step errors; they are extracted once from a full
 run (--artifacts) into results/final_run/analysis/hold_trace.csv, which is versioned.
 
@@ -188,18 +188,36 @@ def table_main(suite, an, out):
     (out / "main.tex").write_text("\n".join(lines) + "\n")
 
 
-def table_ablation(an, results, out):
+def table_memory(mem, out):
+    """Memory study: three levels of stage memory, same data, split and scenes (memory/summary.json)."""
+    names = {"L1": (r"L1 four single-frame MLPs", "latch only"),
+             "L2": (r"L2 GRU, no stop head", "hidden state only"),
+             "L3": (r"\textbf{L3 = B}: GRU + stop head", "hidden state + latch")}
+    lines = [r"\begin{tabular}{@{}llcccc@{}}", r"\toprule",
+             r"Policy & Stage memory & Val./208 & Fresh/300 & $p$ vs B$^*$ & Never done$^\dagger$ \\", r"\midrule"]
+    for lvl, (name, memo) in names.items():
+        v, f = mem["validation"][lvl], mem["fresh"][lvl]
+        p = "--" if f["vs_B"] is None else "$%s$" % pval(f["vs_B"]["mcnemar_p"])
+        lines.append(f"{name} & {memo} & {v['success']} & {f['success']} & {p} & "
+                     f"{v['all']['never_done']} / {f['all']['never_done']} " + r"\\")
+    lines += [r"\midrule",
+              r"\multicolumn{6}{@{}l@{}}{$^*$Exact McNemar, fresh set. $^\dagger$Base never stops (val./fresh).} \\",
+              r"\multicolumn{6}{@{}l@{}}{Wheels restart after ``done'' (val./fresh): L2 %d / %d; with a latch impossible.} \\"
+              % (mem["validation"]["L2"]["all"]["restarts"], mem["fresh"]["L2"]["all"]["restarts"]),
+              r"\multicolumn{6}{@{}l@{}}{Arm drift before ``done'', median (rad): L1 %.2f, L2 %.2f, L3 %.2f (validation).} \\"
+              % tuple(mem["validation"][l]["all"]["arm_drift_rad_median"] for l in ("L1", "L2", "L3")),
+              r"\bottomrule", r"\end{tabular}"]
+    (out / "memory.tex").write_text("\n".join(lines) + "\n")
+
+
+def table_ablation(an, mem, results, out):
     grid_b = json.loads((results / "grid_B_park" / "grid.json").read_text())
     grid_v3 = json.loads((results / "grid_v3_bearing" / "grid.json").read_text())
     g = an["gravity_ablation"]
     hold = an["hold"]
     seeds = an["seeds"]
     rows = [
-        (r"\multicolumn{3}{@{}l}{\emph{Development runs (same validation set)}}", None, None),
-        ("Four MLPs, single-frame input", "195", "no memory"),
-        ("GRU without stop head (v2)", "88", "never stops"),
-        ("GRU, direct torque output", "2", "diverges"),
-        (r"\multicolumn{3}{@{}l}{\emph{Final run}}", None, None),
+        ("B, direct torque output", str(mem["torque_validation"]["success"]), "no PD layer"),
         ("v3: hand-made bearing feature", f"{grid_v3['chosen']['success_1cm']}", "gains %g/%g/%g" % (
             grid_v3["chosen"]["kp"], grid_v3["chosen"]["kd"], grid_v3["chosen"]["lead"])),
         (r"\textbf{B}: learned parking pose", r"\textbf{%d}" % grid_b["chosen"]["success_1cm"], "gains %g/%g/%g" % (
@@ -251,7 +269,9 @@ def main():
     fig_learning_curve(an, figs)
     fig_hold(hold_trace(args.results, args.artifacts), figs)
     table_main(suite, an, tabs)
-    table_ablation(an, args.results, tabs)
+    mem = json.loads((args.results / "memory" / "summary.json").read_text())
+    table_memory(mem, tabs)
+    table_ablation(an, mem, args.results, tabs)
     table_learning(an, tabs)
     print("wrote", sorted(str(p) for p in (*figs.iterdir(), *tabs.iterdir())))
 

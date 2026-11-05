@@ -94,8 +94,9 @@ Every 10th recorded step is used (`GRU_PERIOD = 10`, 100 Hz).
 | Parking pose (MLP) | recorded base x, y and yaw at the public stop time, one sample per trajectory |
 
 **Public stop time:** the first step after which every recorded wheel command stays at 0
-(|ω| ≤ 1e-3 rad/s). It needs only the recorded actions. On 60 checked trajectories it coincides
-exactly with the expert's internal navigation-done time.
+(|ω| ≤ 1e-3 rad/s). It needs only the recorded actions. A one-off check (`check_stop_label.py`, the only
+script that reads the recorded phase) finds it equal to the expert's first `done` step on 1390 of 1391
+demonstrations and 1 ms later on the other.
 
 ## 5. Networks
 
@@ -109,15 +110,21 @@ x_k (18) ─▶ GRU (hidden 128) ─▶ h_k ─▶ Linear(128 → 26)
 ```
 
 - 60,186 parameters: GRU 56,832, output layer 3,354.
-- **Why a recurrent network.** A single frame cannot tell "almost there, slowing down" from
-  "already parked". The hidden state carries this history. Without an explicit stop output (v2) the
-  GRU reached only 88/208 on validation.
+- **What must be remembered (memory study, README Section 7.9).** A single frame cannot tell "almost
+  there, slowing down" from "already parked": the expert's stage is not observed. Three levels on the
+  same data and scenes (validation /208, fresh /300):
+  - L1, four single-frame MLPs with a hand-coded latch: 189 / 272;
+  - L2, this GRU without the stop output (stage only in the hidden state): 54 / 83. The wheels restart
+    after stopping in 188 of 300 fresh runs, and the ungated arm drifts a median 0.31 rad while driving;
+  - L3, this GRU with the latched stop output (B): 207 / 296.
+  The stage is a discrete, irreversible event: it is best learned as an explicit, supervised and latched
+  output, while the hidden state carries continuous context.
 - **Why M·e and not torques.** The arm's desired velocity is v = M·e.
   - v = 0 whenever e = 0, so the arm stops at the target without drift.
   - M has the shape of a damped least-squares inverse kinematics map J^T(JJ^T + λ²I)^{-1}, learned
     from data without a Jacobian.
-  - Torques mix gravity and dynamics. A GRU that outputs torques directly reached only 2/208 on
-    validation.
+  - Torques mix gravity and dynamics. The same GRU with its arm head regressing torques directly
+    (no PD layer) reaches 0/208 on validation.
 
 **Parking MLP** (variant B; `staged_train.py`, stored in `base/policy.npz`)
 
@@ -244,5 +251,6 @@ See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summ
 
 During training every input x_k comes from states the expert visited. In closed loop the inputs come
 from states the policy itself produced. This mismatch is the main limitation of plain behaviour
-cloning. 3 of B's 4 fresh-test failures are latches that never fire, which is consistent with it.
+cloning. 3 of B's 4 fresh-test failures are stop decisions (2 latches never fire, 1 fires at t = 0),
+which is consistent with it; the latch makes such an error irreversible.
 DAgger-style data aggregation is the natural next step.

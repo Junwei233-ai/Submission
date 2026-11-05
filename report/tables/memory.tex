@@ -1,0 +1,13 @@
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Policy & Stage memory & Val./208 & Fresh/300 & $p$ vs B$^*$ & Never done$^\dagger$ \\
+\midrule
+L1 four single-frame MLPs & latch only & 189 & 272 & $8\times10^{-6}$ & 11 / 12 \\
+L2 GRU, no stop head & hidden state only & 54 & 83 & $2\times10^{-64}$ & 58 / 78 \\
+\textbf{L3 = B}: GRU + stop head & hidden state + latch & 207 & 296 & -- & 1 / 2 \\
+\midrule
+\multicolumn{6}{@{}l@{}}{$^*$Exact McNemar, fresh set. $^\dagger$Base never stops (val./fresh).} \\
+\multicolumn{6}{@{}l@{}}{Wheels restart after ``done'' (val./fresh): L2 122 / 188; with a latch impossible.} \\
+\multicolumn{6}{@{}l@{}}{Arm drift before ``done'', median (rad): L1 0.06, L2 0.31, L3 0.04 (validation).} \\
+\bottomrule
+\end{tabular}

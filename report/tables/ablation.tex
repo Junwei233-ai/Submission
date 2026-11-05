@@ -2,11 +2,7 @@
 \toprule
 Variant & Success / 208 & Note \\
 \midrule
-\multicolumn{3}{@{}l}{\emph{Development runs (same validation set)}} \\
-Four MLPs, single-frame input & 195 & no memory \\
-GRU without stop head (v2) & 88 & never stops \\
-GRU, direct torque output & 2 & diverges \\
-\multicolumn{3}{@{}l}{\emph{Final run}} \\
+B, direct torque output & 0 & no PD layer \\
 v3: hand-made bearing feature & 205 & gains 100/10/0.1 \\
 \textbf{B}: learned parking pose & \textbf{207} & gains 200/30/0.2 \\
 B, GRU seeds 1 / 2 & 207 / 208 & seed spread \\

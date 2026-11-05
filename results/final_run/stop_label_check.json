@@ -1,0 +1,9 @@
+{
+  "trajectories": 1391,
+  "exact_match": 1390,
+  "within_1_step": 1391,
+  "within_10_steps": 1391,
+  "offset_steps_min": 0,
+  "offset_steps_max": 1,
+  "offset_steps_median": 0.0
+}

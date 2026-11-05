@@ -12,7 +12,7 @@
 
 \begin{document}
 
-\title{Behaviour Cloning a Mobile Manipulator with a Recurrent Velocity-Field Policy}
+\title{What Must a Cloned Policy Remember?\\ Behaviour Cloning a Mobile Manipulator}
 
 \author{\IEEEauthorblockN{COMP0245 Group [number] --- [Member names]}
 \IEEEauthorblockA{University College London}}
@@ -20,15 +20,16 @@
 \maketitle
 
 \begin{abstract}
-We clone the template expert that drives a four-wheeled base and a 7-DoF arm to a 3-D target. A single
-GRU maps base pose, joint angles and target to wheel commands, a stop decision, and a $7{\times}3$ matrix
-$M$; the arm's desired joint velocity is $M e$ for end-effector error $e$, tracked by a joint PD layer.
-Labels come from recorded states only: wheel commands, finite-difference joint velocities, and a stop
-time read off the wheel commands. On 300 fresh scenes collected after freezing, the policy reaches the
-1\,cm target in 98.7\% of runs (expert 97.7\%, $p=0.55$), holds it as well as the expert, recovers from
-base pushes that defeat the expert (56/60 vs 38/60), and runs in 87\,$\mu$s per 1\,kHz step. Ablations show
-that the action representation decides whether cloning works at all: direct torque regression succeeds
-in 2/208 validation scenes.
+Behaviour cloning (BC) regresses the expert's action on the current observation. The template expert
+for a mobile manipulator is a two-stage state machine (drive, then reach) whose stage is not observed,
+so we ask what a cloned policy must remember. On identical data, split and scenes we compare three
+levels of stage memory: four single-frame MLPs with a hand-coded latch, a GRU that must keep the stage
+in its hidden state, and a GRU with an explicit, latched stop output. They reach 272, 83 and 296 of 300
+fresh scenes (expert: 293). Implicit memory alone fails: in 188 of 300 runs the wheels restart after
+stopping. The recurrent policy with an explicit latch matches the expert ($p=0.55$), holds the target
+as well, recovers from base pushes that defeat the expert (56/60 vs 38/60), and runs in 87\,$\mu$s per
+1\,kHz step. A second finding concerns how to act: regressing torques directly fails in all 208
+validation scenes, while a learned velocity field tracked by a PD layer succeeds in 207.
 \end{abstract}
 
 \section{Introduction}
@@ -46,9 +47,15 @@ the expert at run time. We enforce this in code: learned rollouts abort if the e
 imported. (iii) Success follows the template's \texttt{check\_stop}: base finished, error $<1$\,cm,
 $t>8$\,s; episodes end at 40\,s.
 
-Plain BC suffers from compounding error: small action errors move the robot to states absent from the
-demonstrations~\cite{ross2011}. Our design choices aim at a representation in which such errors are
-self-correcting, and each choice is backed by an ablation (Table~\ref{tab:ablation}).
+BC assumes that the expert's action is a function of what the learner observes. Two things break this
+assumption here. First, compounding error: small action errors move the robot to states absent from the
+demonstrations~\cite{ross2011}. Second, the expert is a state machine. Near the parking pose, a base that
+is still slowing down and a base that has finished look almost the same, yet the expert either keeps
+driving or freezes the wheels and starts reaching. The deciding variable, its stage, is internal, and we
+may not read it. The policy therefore needs memory, and our central question is \emph{what it must
+remember and where that memory should live}. We compare three answers on identical data
+(Section~\ref{sec:memory}). A second, independent finding concerns how the policy should act on the arm.
+Every other design choice is backed by an ablation (Table~\ref{tab:ablation}).
 
 \section{Methodology}
 
@@ -71,7 +78,8 @@ spirit of BC from observation~\cite{torabi2018}:
 recorded joint angles.
 \item \textbf{Stop:} $c_k=\mathbb 1[t\ge t_\text{stop}]$, where $t_\text{stop}$ is the first step after which
 every recorded wheel command stays zero. It needs only the recorded actions, yet matched the expert's
-internal ``navigation done'' time on all 60 trajectories we checked.
+internal ``navigation done'' phase on 1390 of 1391 demonstrations (the other differs by 1\,ms;
+checked once with \texttt{check\_stop\_label.py}, which is the only code that reads the phase).
 \item \textbf{Parking pose:} the recorded base pose at $t_\text{stop}$, one sample per trajectory.
 \end{itemize}
 
@@ -112,14 +120,27 @@ every 1\,ms from the current state, a model error changes the \emph{direction} o
 fixed point: the loop corrects its own mistakes instead of compounding them. A reference
 $q_\text{ref}\leftarrow\text{clip}(q_\text{ref}+v\,dt,\;q\pm\text{lead})$ is tracked by
 $\tau=K_p(q_\text{ref}-q)+K_d(v-\dot q)+g(q)$; this is how the robot actually receives
-\texttt{torque\_arm}. Regressing torques directly instead reaches 2/208 on validation
-(Table~\ref{tab:ablation}): small errors in a gravity-dominated signal diverge in closed loop.
+\texttt{torque\_arm}. Regressing torques directly instead (same GRU, inputs and stop head) succeeds in
+0/208 validation scenes (Table~\ref{tab:ablation}): small errors in a gravity-dominated signal are
+integrated twice by the dynamics and nothing pulls the arm back.
 
-\textbf{Memory and an explicit stop.} A single frame cannot distinguish ``slowing down near the parking
-pose'' from ``parked''. Four single-frame MLPs reach 195/208; a GRU whose phases must emerge from the
-hidden state alone (no stop output) reaches only 88/208, because a regressed wheel speed approaches zero
-without ever committing to stop. We therefore add a stop logit trained with binary cross-entropy and
-latch it after $N$ consecutive positive outputs; the latch makes the decision monotonic.
+\textbf{Stage memory: three levels.} The stop logit $s_k$ is trained with binary cross-entropy against
+$c_k$ and latched after $N$ consecutive positive outputs, so the stage can never be revisited. To test
+whether this explicit memory is needed, we compare three policies (Section~\ref{sec:memory}):
+\begin{itemize}
+\item \textbf{L1, latch only (no learned memory):} our first design, four single-frame MLPs: the parking
+MLP; a wheel MLP and a stop classifier on the base's distance and heading to the predicted parking pose;
+and an arm MLP that maps end-effector error and joint angles to $v$, with the same PD layer. The only
+memory is the hand-coded latch on the stop classifier.
+\item \textbf{L2, hidden state only:} variant B without the stop output. The stage must be kept in the
+GRU's hidden state, and the arm is never gated. For evaluation only, the base counts as ``done'' while
+every wheel command is below 0.05\,rad/s.
+\item \textbf{L3, hidden state + latch:} variant B, our method.
+\end{itemize}
+L2 and L3 differ only in the stop head: same inputs, data, training and gains. L1 also differs in
+architecture; its arm gains come from the same grid and rule on validation (with the expert base, as
+in its original protocol). L1 and L2 were trained after B was frozen, on the same 973 trajectories, and
+no choice used the fresh set.
 
 \textbf{Learned parking pose (variant B) vs.\ a hand-made feature (v3).} The parking pose is not
 translation invariant: it lies on the origin--target ray. Our baseline v3 encodes this with a world-bearing
@@ -159,12 +180,44 @@ results: retrain both models, choose gains on validation, check that development
 selection bias of testing only on scenes the expert solved. All controllers run on identical scenes,
 so we compare them with the exact McNemar test on discordant pairs and report Wilson 95\% intervals.
 
+\subsection{What must the policy remember?}\label{sec:memory}
+Table~\ref{tab:memory} compares the three levels on the 208 validation and 300 fresh scenes.
+
+\textbf{Hidden state only fails (L2: 83/300).} Near the goal the regressed wheel speed approaches zero,
+but nothing makes it \emph{stay} zero: in 188 of 300 runs the wheels start again after first falling
+below the threshold, and in 78 they never fall below it. Because the arm is not gated, it also moves
+while the base drives (median drift 0.31\,rad vs 0.04\,rad for B), so reaching starts from a wrong
+posture on a moving base. The stage change is a discrete, irreversible event; a hidden state trained
+only to regress wheel speeds with MSE has no reason to represent it as one, and its small errors
+compound as BC theory predicts~\cite{ross2011}.
+
+\textbf{A latch alone works surprisingly well (L1: 272/300).} Apart from the stage, the task is close to
+Markov in our base-frame features, and the latch supplies the one missing bit. The single frame still
+costs accuracy: in 12 runs the stop classifier never fires, and when it fires the base parks further
+from the expert's pose (median 9.5\,cm vs 7.4\,cm for B), so the arm misses more often.
+
+\textbf{Hidden state and latch together are best (L3: 296/300)}, significantly better than L1 (27 vs 3
+discordant scenes, $p=8\times10^{-6}$) and L2. Because L1 also differs in architecture, we attribute
+this gap less firmly than the L2--L3 gap, which isolates the stop head. The latch has a price: it turns
+a wrong stop decision into an irreversible one. Of B's four failures, two are latches that never fire
+and one fires at $t=0$ with the base 53\,cm from its parking pose; the fourth is an arm that stops
+6\,cm short.
+
+\textbf{Lesson.} In BC, memory should be split by kind. A discrete stage that must never be revisited
+is best learned as an explicit, supervised and latched variable; continuous context (where to park,
+how fast to approach) can stay in a recurrent state.
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{What must the policy remember? Same data, split and scenes for all three levels}
+\label{tab:memory}
+\begin{adjustbox}{max width=\columnwidth}\input{tables/memory.tex}\end{adjustbox}
+\end{table}
+
 \subsection{Accuracy}
 Table~\ref{tab:main} gives the main results. B reaches 296/300 (98.7\%); the expert reaches 293/300.
 The difference is not significant ($p=0.55$), so we claim parity, not superiority. B also solves all 14
-scenes where the expert failed during collection, although no such scene was used for training. Its four failures are three latches that never fire and one arm that stops 6\,cm short; both
-are consistent with covariate shift~\cite{ross2011}: the policy reaches states that are rare in the
-demonstrations.
+scenes where the expert failed during collection, although no such scene was used for training. Its four failures are analysed in Section~\ref{sec:memory}.
 
 The template's success test only checks the \emph{first} entry into 1\,cm. To test accuracy beyond that
 instant we continue each successful run for 2\,s. B and the expert stay within 1\,cm in 286 runs each
@@ -189,9 +242,9 @@ B and the expert converge; v3 with its chosen $K_d=10$ oscillates.}
 \subsection{Ablations: what makes cloning work}
 Table~\ref{tab:ablation} collects the ablations.
 \begin{itemize}
-\item \textbf{Action representation} decides feasibility: direct torque regression reaches 2/208;
-the velocity field reaches 207.
-\item \textbf{Memory and the stop decision:} without the stop output the GRU reaches 88/208.
+\item \textbf{Action representation} decides feasibility: direct torque regression reaches 0/208 (its
+closest approach has a median of 13.9\,cm), while the velocity field reaches 207. The base still latches
+in 207 of these runs, so the failure lies entirely in how the arm acts.
 \item \textbf{Learned vs.\ hand-made parking information:} 207 vs 205 on validation and 296 vs 289 on the
 fresh test ($p=0.09$). Learning the pose is at least as good as copying the expert's formula.
 \item \textbf{Gravity model:} removing $g(q)$ leaves B unchanged at the chosen gains (207/208). The
@@ -254,16 +307,21 @@ validation scenes (shaded: Wilson 95\% CI).}
 \end{figure}
 
 \section{Conclusion}
-A recurrent policy that outputs a velocity field rather than torques, with an explicit latched stop
-decision and a learned parking pose, clones the expert to parity on fresh scenes, holds the target as
-well as the expert, and is more robust to base disturbances. The ablations show that in BC the choice of
-\emph{what} to imitate and \emph{how} to act matters more than accuracy on recorded data.
+We asked what a cloned policy must remember. Leaving the expert's stage to a recurrent hidden state
+fails (83/300), because the stage is a discrete, irreversible decision that regression does not commit
+to. A hand-coded latch on single-frame networks recovers most of the performance (272/300), and a
+recurrent policy with an explicit, supervised and latched stop output matches the expert (296 vs 293),
+holds the target as well, and recovers from base pushes that defeat it. Independently, the arm must act
+through a learned velocity field and a PD layer: direct torque regression never succeeds. In BC, the
+choice of \emph{what} to remember, \emph{what} to imitate and \emph{how} to act matters more than
+accuracy on recorded data.
 
 \textbf{Limitations.} (i) Training sees only expert states; no DAgger-style aggregation~\cite{ross2011}
 corrects the rare missed latches. (ii) The PD layer, the park-then-reach structure and the latch are fixed,
 and forward kinematics uses the robot model. (iii) The template's first-entry success test hides poor
 damping, which biased our gain selection. (iv) Robustness and OOD tests use 40--60 scenes and one
-perturbation level; only the GRU seed was varied.
+perturbation level; only the GRU seed was varied. (v) In the memory study L1 also differs in architecture
+from L3, and L2 reuses B's gains rather than its own grid.
 
 \textbf{Improvements.} Aggregate policy roll-outs relabelled with the expert (DAgger); learn a residual
 torque on top of the PD layer; select gains and report success with a holding criterion; sweep
