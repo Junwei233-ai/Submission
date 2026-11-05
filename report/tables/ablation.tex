@@ -1,0 +1,23 @@
+\begin{tabular}{@{}lcl@{}}
+\toprule
+Variant & Success / 208 & Note \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Development runs (same validation set)}} \\
+Four MLPs, single-frame input & 195 & no memory \\
+GRU without stop head (v2) & 88 & never stops \\
+GRU, direct torque output & 2 & diverges \\
+\multicolumn{3}{@{}l}{\emph{Final run}} \\
+v3: hand-made bearing feature & 205 & gains 100/10/0.1 \\
+\textbf{B}: learned parking pose & \textbf{207} & gains 200/30/0.2 \\
+B, GRU seeds 1 / 2 & 207 / 208 & seed spread \\
+B, gains: other 11 combinations & 193--207 & gain sensitivity \\
+B without $g(q)$ & 207 & chosen gains \\
+B without $g(q)$, gains 50/30/0.1 & 57 & with $g(q)$: 203 \\
+\midrule
+\multicolumn{3}{@{}l}{\emph{Hold test, fresh set: held $<$1 cm for 2 s / successes}} \\
+v3, Kd=10 (own gains) & 171 / 289 & \\
+v3 with Kd=30 & 278 / 289 & \\
+B, Kd=30 (own gains) & 286 / 296 & \\
+B with Kd=10 & 144 / 296 & \\
+\bottomrule
+\end{tabular}

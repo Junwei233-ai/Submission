@@ -1,4 +1,4 @@
-"""Compare the local retraining with the numbers reported in README.md / GRU.md (trying @ 61bc8f8).
+"""Compare the local retraining with the numbers of the development runs (teammate repo, branch trying @ 61bc8f8).
 Writes <run-dir>/reproduction.json and reproduction.md. Reproduction criterion (fixed in advance):
 successes within 3 scenes of the reported count on the same split."""
 import argparse
