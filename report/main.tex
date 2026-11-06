@@ -7,6 +7,9 @@
 \usetikzlibrary{arrows.meta,positioning,fit}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\captionsetup[table]{labelsep=colon}
 \graphicspath{{figures/}}
 \newcommand{\eg}{e.g.\ }
 
@@ -15,13 +18,13 @@
 \title{What Must a Cloned Policy Remember?\\ Behaviour Cloning a Mobile Manipulator}
 
 \author{\IEEEauthorblockN{Junwei Hu}
-\IEEEauthorblockA{26109296\\University College London}
+\IEEEauthorblockA{26109296}
 \and
 \IEEEauthorblockN{Minghe Gu}
-\IEEEauthorblockA{23057865\\University College London}
+\IEEEauthorblockA{23057865}
 \and
 \IEEEauthorblockN{Haicheng Zhu}
-\IEEEauthorblockA{26150323\\University College London}}
+\IEEEauthorblockA{26150323}}
 
 \maketitle
 
@@ -44,86 +47,107 @@ the FK network's error and poor extrapolation to unseen arm postures.
 \end{abstract}
 
 \section{Introduction}
-The template expert parks the base on the ray from the world origin to the target, at a height-dependent
-standoff, then reaches with differential inverse kinematics (IK) and a joint PD law with gravity
-compensation. Our task is to learn a regressor from the measured state $(\texttt{base\_pos},
-\texttt{base\_bearing}, \texttt{q\_mes}, \texttt{qd\_mes})$ and \texttt{TARGET\_EE\_POS} to
-\texttt{wheel\_cmds} (4) and \texttt{torque\_arm} (7) by behaviour cloning (BC)~\cite{pomerleau1989}:
-supervised learning on expert trajectories.
 
-\textbf{Assumptions and constraints.} (i) Simulation only (PyBullet, 1\,kHz). (ii) At run time the
-learner reads only the listed measurements and the target. It may \emph{not} read the expert's internal
-variables (phase, $q_\text{des}$, navigation state) or call the expert; learned rollouts abort if the
-expert module is imported. (iii) The policy contains \emph{no robot model}: the end-effector position it
-needs is predicted from \texttt{q\_mes} by a learned forward-kinematics network, and no gravity model is
-used. The URDF serves only to score the true error. No sensor is added; the end-effector positions
-recorded in the demonstrations serve as training labels only. Force or contact sensing is not needed
-for free-space reaching, and \texttt{qd\_mes} is used only for damping in the PD layer
-(Section~\ref{sec:features}). (iv) Success follows the template's \texttt{check\_stop}: base finished, error $<1$\,cm,
-$t>8$\,s; episodes end at 40\,s.
+This coursework aims to train a model that reproduces the template
+expert's behaviour of moving a mobile manipulator's end-effector to a
+target position and generalises to unseen targets and initial conditions.
+Behaviour cloning is used to learn a mapping from robot observations
+to control commands using expert demonstration
+trajectories~\cite{pomerleau1989}.
 
-BC assumes that the expert's action is a function of what the learner observes. Two things break this
-assumption here. First, compounding error: small action errors move the robot to states absent from the
-demonstrations~\cite{ross2011}. Second, the expert is a state machine. Near the parking pose, a base that
-is still slowing down and a base that has finished look almost the same, yet the expert either keeps
-driving or freezes the wheels and starts reaching. The deciding variable, its stage, is internal, and we
-may not read it. The task taken literally, a regressor from the raw inputs to the raw actions, fails
-(Section~\ref{sec:memory}). The policy needs memory, and our central question is \emph{what it must remember and where that memory should live}. We compare three answers on identical data
-(Section~\ref{sec:memory}). A second, independent finding concerns how the policy should act on the arm.
-Every other design choice is backed by an ablation (Table~\ref{tab:ablation}).
+The expert first completes base navigation and then controls the arm
+to reach the target. Its actions depend on both the current robot
+state and the internal stage of execution. However, this stage is
+not included in the observations available to the learned policy.
+Similar observations may therefore correspond to different actions
+at different stages, making the appropriate action difficult to
+determine from a single observation alone.
 
-\textbf{Related work.} Recent BC methods for manipulation condition on short observation histories and
-predict chunks of future actions, \eg ACT~\cite{zhao2023act} and Diffusion Policy~\cite{chi2023diffusion}.
-History is not free: it can cause causal confusion, where the policy relies on a nuisance correlate of
-the expert's action~\cite{dehaan2019causal}, and the related ``copycat'' problem, where a policy with
-observation histories repeats its previous action~\cite{wen2020copycat}. This motivates asking which
-specific information a policy must remember rather than giving it as much history as possible.
+This leads to our \textbf{research question:}
+When the expert's internal stage is unavailable, how should a cloned
+policy retain stage information to reproduce the staged behaviour
+reliably?
+
+To investigate this question, we compare three designs for stage
+memory using the same training data, data split and test scenes:
+\begin{itemize}
+    \item \textbf{L1:} four single-frame multilayer perceptrons
+    (MLPs), with stage memory provided by a hand-coded latch.
+
+    \item \textbf{L2:} a gated recurrent unit (GRU) network without
+    a stop output or explicit latch, relying on its hidden state
+    to retain stage information.
+
+    \item \textbf{L3:} a GRU network with a supervised stop output,
+    combining hidden-state memory with an explicit latch that
+    maintains the stopped state once triggered.
+\end{itemize}
+Recent BC methods condition on observation histories~\cite{zhao2023act,chi2023diffusion}, but history can
+cause causal confusion~\cite{dehaan2019causal} and copycat behaviour~\cite{wen2020copycat}, which motivates
+asking which information a policy must remember rather than giving it as much as possible.
+
+\textbf{Assumptions and constraints:}
+All three methods are trained using recorded signals and labels
+derived from them, without using the expert's internal controller
+variables. At run time, they neither read these variables nor call
+the expert controller. All evaluations are conducted in PyBullet
+simulation without additional sensors. The policies contain no robot
+model: the end-effector position is predicted from the joint angles by
+a learned network, and no gravity compensation is used; the robot's
+URDF model only scores the true error. Success follows the template's
+reach condition: navigation is complete, end-effector error is below
+1~cm, and elapsed time exceeds 8~s. Each episode has a 40~s time limit.
 
 \section{Methodology}
 
-\subsection{Expert data}
-We sample 1500 scenes (target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $\pm0.6$\,m, any
-heading; arm start $\pm0.15$\,rad around the template posture) and run the expert headless at 1\,kHz,
-recording the 21 inputs, the 11 actions and the end-effector position, which the collector computes by
-forward kinematics of the measured joint angles (the same value the expert uses). We keep the 1391 runs that end within 1\,cm (55 stalled, 54 ended at
-1.000--1.004\,cm): quality over quantity, as failed behaviour stays out of the labels (the fresh test set
-is not filtered). We split them by
-whole trajectory (seed 42) into 973/208/210 for training, validation and a development test set;
-splitting by frame would leak near-identical neighbouring frames. Normalisation uses training data only.
-The learning curve (Fig.~\ref{fig:lc}, URDF variant) shows how much data is needed: success rises from
-157/208 with 97 trajectories to 207/208 with 973, and the three validation losses fall monotonically.
+\subsection{Expert Demonstrations}
+A total of 1500 scenes are sampled uniformly (seed 42), with ranges fixed by hand around the template's
+workspace: target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $x,y\in[-0.6,0.6]$\,m with any heading;
+arm start angles within $\pm0.15$\,rad of a reference posture. The template expert runs at its 1\,kHz control
+rate, recording the pre-action state, its commands and the end-effector position, which the recorder computes
+by forward kinematics of the measured joint angles (the value the expert itself uses).
 
-\subsection{What to imitate: labels from states}
-Expert torques mix gravity, dynamics and the expert's own PD reaction, so they are a poor target for a
-regressor whose errors feed back through the dynamics. We therefore imitate \emph{observations}, in the
-spirit of BC from observation~\cite{torabi2018}:
+Only the 1391 trajectories that end within 1\,cm are kept: 55 runs stalled, and 54 ended at
+1.000--1.004\,cm, all with low targets. The trajectories are split as a whole
+(70/15/15, seed 42) into 973 training, 208 validation and 210 development test trajectories, so that
+near-identical frames cannot appear in different subsets. Normalisation statistics use the training set only.
+
+A recording ends on first entering the 1\,cm tolerance, so its final pose has not converged. The expert is
+therefore run again on the training and validation scenes for a further 2\,s after success, a duration fixed by
+hand and confirmed by the median final error of 0.6\,mm. The successful runs (967 of 973 and 208 of 208) train
+only the forward kinematics network; all other networks use the original recordings.
+
+\subsection{Labels from Recorded Signals}
+Expert torques mix gravity, dynamics and PD reaction, so the arm imitates the observed joint
+motion~\cite{torabi2018} instead. Frame $k$ is recorded step $t=10k$, a 100\,Hz rate fixed by hand:
 \begin{itemize}
-\item \textbf{Wheels:} the recorded wheel commands (already kinematic).
-\item \textbf{Arm:} desired joint velocity $v_k=(q_{t+10}-q_{t-10})/20$\,ms, a central difference of
-recorded joint angles.
-\item \textbf{Stop:} $c_k=\mathbb 1[t\ge t_\text{stop}]$, where $t_\text{stop}$ is the first step after which
-every recorded wheel command stays zero. It matches the expert's internal ``done'' phase on 1390 of
-1391 demonstrations (checked once; no other code reads the phase).
-\item \textbf{Parking pose:} the recorded base pose at $t_\text{stop}$, one sample per trajectory.
-\item \textbf{Forward kinematics:} recorded end-effector positions, used offline as labels only.
+    \item \textbf{Wheels:} the recorded wheel commands.
+    \item \textbf{Arm:} desired joint velocity $v_k=(q_{t+10}-q_{t-10})/20$\,ms, a central difference of the
+    recorded joint angles, with a window fixed by hand.
+    \item \textbf{Stop:} $c_k=\mathbf{1}[t\ge t_\text{stop}]$, where $t_\text{stop}$ is the first step after
+    which all recorded wheel commands stay below $10^{-3}$\,rad/s. A one-off check, not used in training, found it
+    matches the expert's internal stage on 1390 of 1391 demonstrations and differs by 1\,ms on the other.
+    \item \textbf{Parking pose:} the recorded base pose at $t_\text{stop}$.
+    \item \textbf{End-effector position:} the recorded end-effector position in the extended runs, used
+    offline as the label of the forward kinematics network only. No other network reads it.
 \end{itemize}
-Everything else the policy uses at run time is computed from the listed measurements and the target.
 
-\subsection{Policy}\label{sec:policy}
-Fig.~\ref{fig:arch} shows the final policy, \emph{B-FK}. Every 10\,ms a GRU~\cite{cho2014} (128 hidden
-units) reads 18 features in the base frame: target position and distance, the parking pose predicted by a
-small MLP from the target, the end-effector error $e$, and the 7 joint angles. It outputs 4 wheel
-commands, a stop logit $s_k$, and $M\in\mathbb R^{7\times3}$. The error $e=t-\hat p(q)$ uses the
-end-effector position $\hat p$ predicted by a learned forward-kinematics (FK) network, never the URDF.
+\subsection{Policy (L3)}\label{sec:policy}
+The final policy, called B-FK below (B denotes the same design with the URDF's forward kinematics and
+gravity term), has three learned parts, shown in Fig.~\ref{fig:arch}. One MLP predicts the parking pose from the
+target and another predicts the end-effector position from the joint angles. A GRU~\cite{cho2014} uses these with
+the measured state to output wheel commands, a stop logit and a matrix $M$ every 10\,ms. Fixed components turn
+these outputs into robot commands. Unless stated otherwise, network sizes, learning rates, batch sizes and epoch
+limits were fixed by hand and not swept.
 
-\begin{figure}[t]
+\begin{figure}[H]
 \centering
 \begin{tikzpicture}[font=\scriptsize, node distance=3mm and 4mm,
   box/.style={draw, rounded corners=1pt, align=center, inner sep=2pt, minimum height=6mm},
   fixed/.style={box, fill=gray!12}, arr/.style={-{Latex[length=1.5mm]}}]
 \node[box] (in) {state, target\\$\to$ 18 features\\(base frame)};
 \node[box, above=of in] (park) {parking MLP\\target $\to$ pose};
-\node[box, below=of in] (fk) {FK MLP\\$q \to \hat p$};
+\node[box, below=of in] (fk) {FK MLP\\$q \to$ end-effector};
 \node[box, right=of in, minimum height=14mm] (gru) {GRU\\128\\100\,Hz};
 \node[box, right=of gru, yshift=6mm] (w) {wheels (4)};
 \node[box, right=of gru] (s) {stop logit};
@@ -135,94 +159,114 @@ end-effector position $\hat p$ predicted by a learned forward-kinematics (FK) ne
 \draw[arr] (s) -- (latch); \draw[arr] (m.south) |- (pd.west);
 \draw[arr] (latch) -- node[right]{gates} (pd);
 \end{tikzpicture}
-\caption{Policy B-FK. White: learned from demonstrations. Grey: fixed structure. No robot model is
-used. Before the latch the wheels follow the GRU and the arm holds its start pose; after it the wheels
-stop and the arm reaches. The FK MLP and the PD layer run at 1\,kHz.}
+\caption{Policy. White: learned from demonstrations. Grey: fixed structure.
+The FK MLP and PD layer run at 1\,kHz.}
 \label{fig:arch}
 \end{figure}
 
-\textbf{Velocity field $v=Me$.} The arm's desired joint velocity is $v=Me$. This guarantees $v=0$ at
-$e=0$, so the arm stops at the target, and $M$ has the shape of a damped least-squares IK map
-$J^\top(JJ^\top+\lambda^2I)^{-1}$ that the network learns without a Jacobian (tested in Section~\ref{sec:arm}). Because $e$ is recomputed
-every 1\,ms, a model error changes the \emph{direction} of approach but not the fixed point, so errors
-are corrected rather than compounded. A reference $q_\text{ref}\leftarrow\text{clip}(q_\text{ref}+v\,dt,\;q\pm\text{lead})$,
-integrated from the learned $v$ (not the expert's $q_\text{des}$), is tracked by
-$\tau=K_p(q_\text{ref}-q)+K_d(v-\dot q)$ to produce \texttt{torque\_arm}. Regressing torques directly
-instead succeeds in 0/208 validation scenes (Table~\ref{tab:ablation}): errors in a gravity-dominated
-signal are integrated by the dynamics and nothing pulls the arm back. The PD layer contains no task
-knowledge and no robot model; without gravity compensation the integrated reference acts as an integral
-term ($K_p\cdot\text{lead}=40$\,N\,m exceeds the 17.7\,N\,m median shoulder load), and the held arm sags
-by about 0.1\,rad before reaching.
+\textbf{Parking MLP.} The expert's parking pose lies on the ray from the world origin to the target, which
+relative features cannot express. An MLP (two ReLU hidden layers of 128 units) therefore maps the target to the
+parking position and the $\sin$ and $\cos$ of the heading. It is trained with MSE and Adam (learning rate
+$10^{-3}$) for at most 200 epochs with patience 15. The batch size follows a fixed rule, one twentieth of the
+samples. The GRU uses its predictions in training and at run time. A baseline, v3, instead feeds the GRU a
+world-bearing angle copied from the expert's code.
 
-\textbf{Learned forward kinematics.} An MLP ($2\times512$ ReLU, 268,291 parameters) maps the 7 joint
-angles to the end-effector position in the base frame, placed in the world by the measured base pose. Its
-data are new expert runs of the 973 training scenes that continue for 2\,s after success, so converged
-poses are covered; the 967 successful runs give 2.7\,M frames (every 2nd after $t_\text{stop}$, every 20th
-before), with the recorded end-effector positions as labels. On the 208 validation scenes, run the same
-way, its final-frame error has a median of 2.0\,mm (p95 6.2, max 15.4\,mm); since the arm stops where the \emph{predicted} error is zero, this
-bounds the final accuracy. The GRU is trained on $e$ from this network, exactly as at run time.
+\textbf{Forward kinematics MLP.} The end-effector error $e$ needs the end-effector position, which would otherwise
+require a robot model. An MLP (two ReLU hidden layers of 512 units) maps the joint angles to the end-effector
+position in the base frame, placed in the world by the measured base pose. It is trained with MSE and Adam
+(cosine learning rate, 60 epochs) on 2.7\,M frames of the 967 extended training runs: every 2nd frame after
+$t_\text{stop}$ and every 20th before, a sampling chosen on validation scenes from two candidates. On the
+validation runs its final-frame error has a median of 2.0\,mm (p95 6.2, maximum 15.4\,mm). Since the arm stops
+where the \emph{estimated} error is zero, this error bounds the final accuracy. It provides $e$ to every network
+in training and at run time.
 
-\textbf{Learned parking pose (variant B) vs.\ a hand-made feature (v3).} The parking pose is not
-translation invariant: it lies on the origin--target ray. The baseline v3 encodes this with a world-bearing
-feature copied from the expert's code; B instead learns it with an MLP (2$\times$128 ReLU, 17,540
-parameters) from the target, removing the last expert formula from the inputs.
+\textbf{Recurrent network.} Every 10\,ms, a single-layer GRU with 128 hidden units reads the 18 base-frame features
+in Table~\ref{tab:features} and outputs 4 wheel commands, a stop logit and $M\in\mathbb{R}^{7\times3}$. Relative
+features were chosen because the expert's base control uses only relative quantities. A recurrent network is used
+because a single frame cannot show whether the base is still moving. Joint velocities are excluded because they are
+nearly identical to the velocity labels.
 
-\textbf{Why these features.}\label{sec:features} The expert's base law uses only relative quantities (distance, heading and
-yaw errors), so all features are expressed in the base frame and angles as $\sin/\cos$. Joint velocities
-are omitted: they are noisy and the PD layer already uses them.
+\begin{table}[H]
+\centering
+\caption{GRU input features}
+\label{tab:features}
+\begin{tabular}{@{}cll@{}}
+\toprule
+Dim. & Feature & Source \\
+\midrule
+0--1 & Target position relative to base ($x,y$) & Measured \\
+2 & Target height difference & Measured \\
+3 & Horizontal distance to target & Measured \\
+4--5 & Parking position relative to base ($x,y$) & Parking MLP$^*$ \\
+6--7 & Parking heading error ($\sin,\cos$) & Parking MLP$^*$ \\
+8--10 & End-effector error $e$ & FK MLP$^*$ \\
+11--17 & Joint angles & Measured \\
+\bottomrule
+\multicolumn{3}{@{}l}{\footnotesize $^*$Prediction combined with the measured base pose.}
+\end{tabular}
+\end{table}
 
-\textbf{Stage memory: three levels.} The stop logit $s_k$ is trained with binary cross-entropy against
-$c_k$ and latched after $N$ consecutive positive outputs, so the stage can never be revisited. To test
-whether this explicit memory is needed, we compare three policies (Section~\ref{sec:memory}):
-\begin{itemize}
-\item \textbf{L1, latch only:} our first design, four single-frame MLPs (parking pose; wheels and stop
-from the base's offset to the parking pose, which do not use $e$; arm $v$ from $e$ and $q$, retrained on
-the learned FK, same PD layer). The only memory is a hand-coded latch on the stop classifier.
-\item \textbf{L2, hidden state only:} B-FK without the stop output; the stage must live in the hidden
-state and the arm is never gated (``done'' for evaluation: all wheel commands below 0.05\,rad/s).
-\item \textbf{L3, hidden state + latch:} B-FK, our method.
-\end{itemize}
-All three use the learned FK, no gravity term and the same gains (200/30/0.2), so they share one arm
-layer. L2 and L3 differ only in the stop head: same inputs, data and training. L1 also differs in
-architecture. All were trained on the same 973 trajectories, and no choice used the fresh set. The study is also our answer to whether the model should see a single
-time instant or a temporal interval: L0 and L1 see one instant, L2 and L3 the whole history through the
-GRU state, and L1 vs.\ L3 asks how much the interval adds once the one missing bit is supplied.
+\textbf{Stop latch.} Once the stop logit has been positive for $N$ consecutive updates, the policy latches and never
+releases. Before the latch, the GRU drives the wheels and the arm holds its start pose; after it, the wheels stop
+and the arm reaches. $N$ is chosen on the recorded validation sequences from $\{1,2,3,5,10,20\}$, by the smallest
+mean offset from $t_\text{stop}$ ($N=1$).
 
-\textbf{Plain regressors (L0).} To test whether any of this structure is needed, L0 is the task
-taken literally: a regressor from the 21 raw inputs to the 11 raw actions (4 wheel commands, 7 torques),
-applied directly with no features, memory, latch or PD layer. We fit a ridge regressor and an MLP
-(2$\times$128 ReLU) on every fifth frame of the 973 training trajectories.
+\textbf{Arm interface.} The network outputs $M$, giving the desired joint velocity $v=Me$, which is zero when the
+estimated error is zero; $M$ has the shape of a damped least-squares IK map that the network learns without a
+Jacobian (tested in Section~\ref{sec:arm}). The velocity is integrated into a reference,
+$q_\text{ref}\leftarrow\text{clip}(q_\text{ref}+v\,\Delta t,\;q\pm\text{lead})$, and converted to torque at 1\,kHz:
+\begin{equation}
+\tau=K_p(q_\text{ref}-q)+K_d(v-\dot q).
+\end{equation}
+This PD form was chosen by hand and has no gravity term: the integrated reference acts like an integral term, and
+the held arm sags by about 0.1\,rad before reaching. Torques are clipped to the largest magnitude in the training
+demonstrations, and $v$ to the largest training label.
 
-\subsection{Training}
-The loss is $L=L_\text{wheel}+L_\text{arm}+L_\text{stop}$: MSE on normalised wheel commands, MSE on
-$(Me-v)/\sigma_v$ over frames after $t_\text{stop}$ only (the arm is held before), and BCE on $s_k$.
-We use Adam ($10^{-3}$), batches of 32 whole trajectories with masking, full back-propagation through
-time with gradient clipping at 1, and early stopping on validation loss (patience 8, at most 80 epochs).
-Although the arm loss covers only post-stop frames, its gradient flows back through the hidden state, so
-the GRU can store during navigation what the arm needs later. The GRU of B-FK trains in 50\,min on a
-shared CPU (best epoch 78 of 80); the FK MLP (MSE, Adam with a cosine schedule, 60 epochs) in 10\,min.
-The run-time forward pass is NumPy and matches PyTorch to $10^{-5}$.
+\textbf{Training and hyperparameters.} The GRU minimises $L=L_\text{wheel}+L_\text{arm}+L_\text{stop}$, with equal
+weights fixed by hand: MSE on normalised wheel commands, MSE on $(Me-v_k)/\sigma_v$ after $t_\text{stop}$ only, and
+binary cross-entropy on $c_k$. Training uses Adam (learning rate $10^{-3}$), batches of 32 whole trajectories, full
+back-propagation through time, gradient clipping at 1 and early stopping on validation loss (patience 8, at most 80
+epochs; best epoch 78). The gains $K_p$, $K_d$ and lead do not appear in this loss, so they were selected in closed
+loop on the 208 validation scenes over the hand-fixed grid $\{50,100,200\}\times\{10,30\}\times\{0.1,0.2\}$, with a
+rule fixed in advance: most successes, then the shortest mean success time, then the fewest torque-clipped steps.
+The grid was run for the URDF variant B, which chose 200/30/0.2 (10 of 12 points gave 206--207 of 208); L1--L3
+reuse these gains without a new search.
 
-\textbf{Hyperparameters chosen on validation.} The latch length $N$ is chosen open-loop on validation
-sequences (smallest mean offset to $t_\text{stop}$; $N=1$ for B and B-FK). The gains $(K_p,K_d,\text{lead})$ do not
-enter the loss and success is not differentiable through the simulator, so we grid-search
-$\{50,100,200\}\times\{10,30\}\times\{0.1,0.2\}$ in closed loop on the 208 validation scenes with a rule
-fixed beforehand (most successes, then shortest time, then fewest clipped steps). With 12 points and a
-flat landscape (10 of 12 give 206--207), grid search beats Bayesian optimisation. The grid was run for the
-URDF variant B (the same design with analytic FK and $g(q)$), which chose 200/30/0.2; B-FK reuses these
-gains.
+\subsection{Comparison Policies}
+\textbf{L0, plain regressor.} An MLP (two ReLU hidden layers of 128 units) maps the 21 raw inputs directly to the 11
+raw actions, without features, memory, a latch or a PD layer. It uses every fifth training frame, fixed by hand.
+
+\textbf{L1, four single-frame MLPs.} Three MLPs handle the base: the parking MLP, a wheel MLP and a stop classifier,
+the last two using the distance and heading errors to the predicted parking pose. A fourth maps the estimated $e$
+and joint angles to $M$. The only stage memory is a hand-coded latch, whose length is chosen on the recorded
+validation sequences.
+
+\textbf{L2, GRU without explicit stage memory.} This is L3 without the stop output and latch, so the stage must be
+held in the hidden state. The arm is never held and its loss covers all frames. For evaluation only, the base counts
+as finished while every wheel command is below 0.05\,rad/s, a threshold fixed by hand.
+
+L1, L2 and L3 share the FK MLP, PD layer and gains. L0 and L1 see a single instant, whereas L2 and L3 use the whole
+history. Only L2 versus L3 isolates explicit stage memory; L1 also differs in architecture and features.
+
+\subsection{Evaluation Protocol}
+Success uses the template's reach condition and limits: base finished, end-effector error below 1\,cm and $t>8$\,s,
+with a 40\,s limit. The template's stall termination is not used, because it can report a run that has already
+reached the target as failed. All controllers use the same evaluator, which computes the true end-effector position
+with the URDF for scoring only; the policy never reads it. Test scenes are generated with a separate seed and not
+filtered by expert performance. Controllers run on identical scenes, so they are compared with the exact McNemar
+test, and Wilson 95\% intervals are reported.
 
 \section{Experiments and Results}
 
 \subsection{Protocol}\label{sec:protocol}
 The original test split was used during development, so we fixed a protocol before seeing results:
 retrain, choose gains on validation, check that development numbers reproduce (within $\pm3$ scenes),
-\emph{freeze}, then collect 300 new scenes (seed 2026, not filtered by expert success) and evaluate once.
-This froze the URDF variant B; to remove the robot model we then trained the FK MLP, retrained the GRUs
-on its estimate with unchanged settings, and evaluated B-FK once. Runs are deterministic on one machine
-(across platforms 1--3 borderline scenes can flip). All controllers run on identical scenes, compared
-with the exact McNemar test; intervals are Wilson 95\%. Every number, table and figure in this report is
-generated by scripts from per-scene results versioned in our repository (README).
+\emph{freeze}, then collect 300 new scenes (seed 2026) and evaluate each controller once. This froze the
+URDF variant B (the same design with the analytic forward kinematics and gravity term); to remove the
+robot model we then trained the FK MLP, retrained the networks on its estimate with unchanged settings,
+and evaluated B-FK (L3) once. Runs are deterministic on one machine (across platforms 1--3 borderline
+scenes can flip). Every number, table and figure is generated by scripts from per-scene results
+versioned in our repository (README).
 
 \subsection{What must the policy remember?}\label{sec:memory}
 Table~\ref{tab:memory} compares L0 and the three levels on the 208 validation and 300 fresh scenes.
