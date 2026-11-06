@@ -2,6 +2,9 @@
 \toprule
 Variant & Success / 208 & Note \\
 \midrule
+\textbf{B-FK}: learned FK, no $g(q)$ & \textbf{200} & final \\
+B-FK, GRU trained on URDF $e$ & 198 & train/run mismatch \\
+\emph{URDF FK and $g(q)$ (rows below):} \\
 B, direct torque output & 0 & no PD layer \\
 v3: hand-made bearing feature & 205 & gains 100/10/0.1 \\
 \textbf{B}: learned parking pose & \textbf{207} & gains 200/30/0.2 \\

@@ -31,6 +31,11 @@ TASK_DIR = ROOT / "robotnik_arm_task"
 RESULTS = ROOT / "results" / "final_run"
 HALF = 10  # central-difference half window (steps), as in the training labels
 _kin = None
+_cfg = dict(gru=RESULTS / "gru_B_park" / "gru.npz", fk=None)
+
+
+def configure(gru, fk):
+    _cfg.update(gru=gru, fk=fk)
 
 
 def kinematics():
@@ -76,15 +81,18 @@ def measures(v, e, jac, matrix=None):
 def replay(folder):
     """B: replay the frozen GRU on the logged states of one roll-out; one row per post-latch update."""
     global _kin
-    from staged_policy import GRUPolicy, gru_park_features, park_pose
+    from staged_policy import GRUPolicy, LearnedFK, gru_park_features, park_pose
     _kin = _kin or kinematics()
     x = np.load(folder / "rollout.npz")["inputs"]
-    gru = GRUPolicy(RESULTS / "gru_B_park" / "gru.npz")
+    gru = GRUPolicy(_cfg["gru"])
+    fk = LearnedFK(_cfg["fk"]) if _cfg["fk"] else None
     gru.reset(x[0, 4:11])
     park = park_pose(gru.park_net, x[0, 18:21])
     rows = []
     for k in range(0, len(x), gru.period):
         ee, jac = _kin(x[k])
+        if fk is not None:  # the policy's own end-effector estimate, as at run time; J stays the URDF reference
+            ee = fk(x[k, 4:11], x[k, :3], x[k, 3])
         f = gru_park_features(x[k, :3], x[k, 3], x[k, 4:11], ee, x[k, 18:21], *park)
         gru._update(f)
         e = f[8:11]
@@ -121,16 +129,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rollouts", type=Path, required=True, help="B's fresh-test roll-outs (rollouts/ folder)")
     parser.add_argument("--model-dir", type=Path, default=RESULTS / "base", help="split.json with the demonstrations")
+    parser.add_argument("--gru-model", type=Path, default=RESULTS / "gru_B_park" / "gru.npz")
+    parser.add_argument("--fk-model", type=Path, help="Policy features use this learned FK (B-FK), as at run time")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     parser.add_argument("--output", type=Path, default=RESULTS / "analysis" / "arm_matrix.json")
     args = parser.parse_args()
     split = json.loads((args.model_dir / "split.json").read_text())
     demos = [Path(split["source"]) / n for n in split["splits"]["validation"]]
-    with Pool(args.workers) as pool:
+    with Pool(args.workers, initializer=configure, initargs=(args.gru_model, args.fk_model)) as pool:
         b = [r for rows in pool.map(replay, sorted(p for p in args.rollouts.iterdir() if p.is_dir())) for r in rows]
         expert = [r for rows in pool.map(demo, demos) for r in rows]
     out = dict(B=summary(b, ["alignment", "task_gain_per_s", "null_share", "cos_M_pinv", "cos_M_transpose"]),
                expert=summary(expert, ["alignment", "task_gain_per_s", "null_share"]),
+               gru_model=str(args.gru_model), fk_model=str(args.fk_model) if args.fk_model else None,
                note="B: frozen GRU replayed on its fresh-test roll-outs, post-latch updates with |e| >= 1 cm; "
                     "expert: public velocity labels on validation demonstrations after the stop time")
     args.output.write_text(json.dumps(out, indent=2) + "\n")

@@ -1,7 +1,8 @@
 """Build the report's figures (PDF) and LaTeX tables from the versioned result summaries.
 
 Every number in report/tables/*.tex and report/figures/*.pdf is read from results/final_run/
-(suite/summary.json, analysis/summary.json, memory/summary.json, grid_*/grid.json, gru_*/gru.json), so the report cannot
+(fk_run/summary.json for the final method B-FK; suite/summary.json, analysis/summary.json, memory/summary.json,
+grid_*/grid.json, gru_*/gru.json for the URDF study), so the report cannot
 drift from the code. The hold-trace and memory-trace figures need per-step signals; they are extracted once
 from a full run (--artifacts) into results/final_run/analysis/hold_trace.csv and
 results/final_run/memory/trace_<scene>.csv, which are versioned.
@@ -20,7 +21,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 # Validated default categorical slots 1-3 (blue, orange, aqua); markers give a second encoding for print.
-STYLE = {"B": dict(color="#2a78d6", marker="o", label="B (ours)"),
+STYLE = {"B": dict(color="#2a78d6", marker="o", label="B-FK (ours)"),
          "expert": dict(color="#eb6834", marker="s", label="Expert"),
          "v3": dict(color="#1baf7a", marker="^", label="v3 (baseline)")}
 INK, MUTED, GRID = "#1f2328", "#5b6470", "#e3e6ea"
@@ -30,7 +31,7 @@ MEMORY_SCENE = "scene_2026_0012"  # fresh scene where L0 and L2 fail and L1 and 
 LEVEL_STYLE = {"L0": dict(color="#8a929c", label="L0 plain MLP", lw=0.6, zorder=1),
                "L1": dict(color="#1baf7a", label="L1 latch only", lw=1.2, zorder=3),
                "L2": dict(color="#eb6834", label="L2 hidden state only", lw=1.2, zorder=2),
-               "L3": dict(color="#2a78d6", label="L3 = B", lw=1.4, zorder=4)}
+               "L3": dict(color="#2a78d6", label="L3 = B-FK", lw=1.4, zorder=4)}
 
 plt.rcParams.update({
     "font.family": "serif", "font.size": 8, "axes.titlesize": 8, "axes.labelsize": 8,
@@ -56,8 +57,19 @@ def pval(p):
 
 
 # ---------------------------------------------------------------- figures
+def fk_condition_rows(fk):
+    """fk_run/summary.json robustness and OOD entries in the row format of suite/summary.json."""
+    rows = []
+    for key, prefix in (("robustness", "robust_"), ("ood", "ood_")):
+        for c, r in fk[key].items():
+            rate = lambda x: dict(rate=x["success"] / x["scenes"], wilson95=x["wilson95"])
+            rows.append(dict(condition=prefix + c, scenes=r["B_FK"]["scenes"], B=rate(r["B_FK"]), expert=rate(r["expert"]),
+                             B_vs_expert=r["B_FK"]["paired"]))
+    return rows
+
+
 def fig_conditions(suite, out):
-    """Robustness and OOD: success rate with Wilson CI, B vs expert, one row per condition."""
+    """Robustness and OOD: success rate with Wilson CI, B-FK vs expert, one row per condition."""
     names = {"robust_noise003": "Noise $\\sigma$=0.003", "robust_noise010": "Noise $\\sigma$=0.01",
              "robust_torque080": "Arm torque 80%", "robust_pushee30": "EE push 30 N",
              "robust_pushbase20": "Base push 20 N", "ood_far_target": "OOD: far target",
@@ -123,12 +135,14 @@ def fig_learning_curve(an, out):
     plt.close(fig)
 
 
-def hold_trace(results, artifacts):
+def hold_trace(results, artifacts, fk_rollouts):
+    """Per-step EE error in TRACE_SCENE during the hold test: B-FK (fk_rollouts/hold_L3), v3 and expert
+    (URDF study). Extracted once into results/final_run/analysis/hold_trace.csv."""
     path = results / "analysis" / "hold_trace.csv"
-    if artifacts and (artifacts / "analysis").is_dir():
+    if artifacts and (artifacts / "analysis").is_dir() and (fk_rollouts / "hold_L3").is_dir():
         cols = {}
         for c in ("B", "v3", "expert"):
-            folder = artifacts / "analysis" / f"hold_{c}" / "rollouts" / TRACE_SCENE
+            folder = ((fk_rollouts / "hold_L3") if c == "B" else (artifacts / "analysis" / f"hold_{c}")) / "rollouts" / TRACE_SCENE
             err = np.load(folder / "rollout.npz")["ee_error"]
             res = json.loads((folder / "result.json").read_text())
             n_hold = int(round(res["hold"]["completed_s"] * 1000))
@@ -162,12 +176,12 @@ def fig_hold(trace, out):
     plt.close(fig)
 
 
-def memory_trace(results, artifacts):
+def memory_trace(results, artifacts, fk_rollouts):
     """Per-level wheel command and EE error in MEMORY_SCENE (fresh set), every 10 ms; extracted once."""
     path = results / "memory" / f"trace_{MEMORY_SCENE}.csv"
-    if artifacts and (artifacts / "memory").is_dir():
-        folders = {"L0": artifacts / "direct" / "fresh_mlp", "L1": artifacts / "memory" / "fresh_fournet",
-                   "L2": artifacts / "memory" / "fresh_gru_nostop", "L3": artifacts / "suite" / "fresh_B"}
+    if artifacts and (artifacts / "memory").is_dir() and (fk_rollouts / "test_L3").is_dir():
+        folders = {"L0": artifacts / "direct" / "fresh_mlp", "L1": fk_rollouts / "test_L1",
+                   "L2": fk_rollouts / "test_L2", "L3": fk_rollouts / "test_L3"}
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["level", "t_s", "max_abs_wheel_cmd", "ee_error_m", "done", "success_1cm"])
@@ -216,8 +230,9 @@ def fig_memory_trace(trace, out):
     plt.close(fig)
 
 
-def fig_fit_vs_success(an, mem, results, out):
-    """Open-loop validation wheel loss (same definition for every GRU) vs closed-loop validation success."""
+def fig_fit_vs_success(an, mem, fk, results, out):
+    """Open-loop validation wheel loss (same definition for every GRU) vs closed-loop validation success.
+    Filled: URDF end-effector position (B's learning curve and seeds, L2); open: learned FK (B-FK, L2)."""
     fig, ax = plt.subplots(figsize=(COL_W, 1.6))
     pts = []  # (loss, success, label, colour, marker)
     for frac, r in an["learning_curve"].items():
@@ -229,6 +244,11 @@ def fig_fit_vs_success(an, mem, results, out):
     l2 = json.loads((results / "memory" / "gru_nostop" / "gru.json").read_text())["metrics"]
     pts.append((l2["validation_wheel_loss"], mem["validation"]["L2"]["success"], "L2 (no stop head)",
                 LEVEL_STYLE["L2"]["color"], "s"))
+    g_fk = json.loads((results / "fk_run" / "gru_B_fk" / "gru.json").read_text())["metrics"]
+    l2_fk = json.loads((results / "fk_run" / "memory" / "gru_nostop_fk" / "gru.json").read_text())["metrics"]
+    for x, y, c, m in ((g_fk["validation_wheel_loss"], fk["validation"]["B_FK"]["success"], STYLE["B"]["color"], "o"),
+                       (l2_fk["validation_wheel_loss"], fk["memory"]["validation_L2"]["success"], LEVEL_STYLE["L2"]["color"], "s")):
+        ax.plot(x, 100 * y / 208, marker=m, ms=4.5, ls="none", markerfacecolor="white", markeredgecolor=c, markeredgewidth=1.1)
     for x, y, lab, c, m in pts:
         ax.plot(x, 100 * y / 208, marker=m, ms=4.5, color=c, ls="none", markeredgecolor="white", markeredgewidth=0.6)
         if lab:
@@ -236,6 +256,7 @@ def fig_fit_vs_success(an, mem, results, out):
             ax.annotate(lab, (x, 100 * y / 208), textcoords="offset points", xytext=(dx, dy), fontsize=6.5, color=INK,
                         ha="center" if dx == 0 else "left")
     seeds = [r["validation_wheel_loss"] for r in an["seeds"].values()]
+    ax.text(0.98, 0.08, "filled: URDF FK\nopen: learned FK", transform=ax.transAxes, ha="right", fontsize=6.5, color=MUTED)
     ax.annotate("B, 973 traj., 3 seeds", (max(seeds), 100 * 207 / 208), textcoords="offset points", xytext=(6, -3),
                 fontsize=6.5, color=INK)
     ax.set_xscale("log")
@@ -251,70 +272,83 @@ def fig_fit_vs_success(an, mem, results, out):
 
 
 # ---------------------------------------------------------------- tables
-def table_main(suite, an, out):
+def table_main(suite, an, fk, results, out):
+    """Fresh test: B-FK (final), B with the URDF (same design, analytic FK and g(q)) and the expert."""
     fresh = next(r for r in suite["conditions"] if r["condition"] == "fresh")
-    hold = an["hold"]
-    lines = [r"\begin{tabular}{@{}lccc@{}}", r"\toprule",
-             r" & \textbf{B (ours)} & v3 & Expert \\", r"\midrule"]
-    lines.append("1 cm success / 300 & " + " & ".join(
-        (r"\textbf{%d}" if c == "B" else "%d") % fresh[c]["success"] for c in ("B", "v3", "expert")) + r" \\")
-    lines.append(r"\quad rate (\%) & " + " & ".join(pct(fresh[c]["rate"]) for c in ("B", "v3", "expert")) + r" \\")
-    lines.append(r"\quad 95\% Wilson CI & " + " & ".join(ci(fresh[c]["wilson95"]) for c in ("B", "v3", "expert")) + r" \\")
-    lines.append(r"Held $<$1 cm for 2 s & " + " & ".join(str(hold[c]["held_within_1cm"]) for c in ("B", "v3", "expert")) + r" \\")
-    lines.append(r"Worst err.\ last 1 s, median (mm) & " + " & ".join(
-        f"{1000 * hold[c]['last_second_max_median_m']:.1f}" for c in ("B", "v3", "expert")) + r" \\")
-    lines.append(r"Mean time to success (s) & " + " & ".join(
-        f"{fresh[c]['mean_success_time_s']:.2f}" for c in ("B", "v3", "expert")) + r" \\")
-    lines.append(r"Compute per 1 kHz step ($\mu$s) & " + " & ".join(
-        f"{fresh[c]['policy_time_mean_us']:.0f}" for c in ("B", "v3", "expert")) + r" \\")
+    hold, f, h = an["hold"], fk["fresh"], fk["hold"]
     m = suite["models"]
-    lines.append(r"Parameters & " + f"{m['B']['gru_parameters'] + m['B']['park_mlp_parameters']:,} & "
-                 + f"{m['v3']['gru_parameters']:,} & -- " + r"\\")
-    lines.append(r"Model file (KiB) & " + f"{m['B']['file_kib']:.0f} & {m['v3']['file_kib']:.0f} & -- " + r"\\")
+    cols = [("B_FK", r"\textbf{B-FK (ours)}"), ("B", "B, URDF FK"), ("expert", "Expert")]
+    val = dict(B_FK=f["B_FK"], B=fresh["B"], expert=fresh["expert"])
+    held = dict(B_FK=h["B_FK"]["held_within_1cm"], B=hold["B"]["held_within_1cm"], expert=hold["expert"]["held_within_1cm"])
+    fk_params = fk["fk_model"]["parameters"]
+    gru_params = m["B"]["gru_parameters"] + m["B"]["park_mlp_parameters"]
+    lines = [r"\begin{tabular}{@{}lccc@{}}", r"\toprule", " & " + " & ".join(c for _, c in cols) + r" \\", r"\midrule"]
+    lines.append("1 cm success / 300 & " + " & ".join(
+        (r"\textbf{%d}" if k == "B_FK" else "%d") % val[k]["success"] for k, _ in cols) + r" \\")
+    lines.append(r"\quad rate (\%) & " + " & ".join(pct(val[k]["success"] / 300) for k, _ in cols) + r" \\")
+    lines.append(r"\quad 95\% Wilson CI & " + " & ".join(ci(val[k]["wilson95"]) for k, _ in cols) + r" \\")
+    lines.append(r"Held $<$1 cm for 2 s & " + " & ".join(str(held[k]) for k, _ in cols) + r" \\")
+    lines.append(r"Mean time to success (s) & " + " & ".join(f"{val[k]['mean_success_time_s']:.2f}" for k, _ in cols) + r" \\")
+    lines.append(r"Compute per 1 kHz step ($\mu$s) & " + " & ".join(f"{val[k]['policy_time_mean_us']:.0f}" for k, _ in cols) + r" \\")
+    lines.append(r"Learned parameters & " + f"{gru_params + fk_params:,} & {gru_params:,} & -- " + r"\\")
+    lines.append(r"Robot model in the policy & none & FK, $g(q)$ & FK, IK, $g(q)$ \\")
+    p1, p2 = f["B_FK"]["paired"], f["B_FK_vs_B_urdf"]
     lines += [r"\midrule",
-              r"\multicolumn{4}{@{}l@{}}{Paired exact McNemar (discordant pairs): B vs expert %d/%d, $p=%s$;} \\"
-              % (fresh["B_vs_expert"]["only_first"], fresh["B_vs_expert"]["only_second"], pval(fresh["B_vs_expert"]["mcnemar_p"])),
-              r"\multicolumn{4}{@{}l@{}}{B vs v3 %d/%d, $p=%s$; held $<$1 cm: B vs v3 %d/%d, $p=%s$.} \\"
-              % (fresh["B_vs_v3"]["only_first"], fresh["B_vs_v3"]["only_second"], pval(fresh["B_vs_v3"]["mcnemar_p"]),
-                 hold["B_vs_v3_held_1cm"]["only_first"], hold["B_vs_v3_held_1cm"]["only_second"],
-                 pval(hold["B_vs_v3_held_1cm"]["mcnemar_p"])),
+              r"\multicolumn{4}{@{}l@{}}{Exact McNemar (discordant pairs): B-FK vs expert %d/%d, $p=%s$;} \\"
+              % (p1["only_first"], p1["only_second"], pval(p1["mcnemar_p"])),
+              r"\multicolumn{4}{@{}l@{}}{B-FK vs B %d/%d, $p=%s$. Held: B-FK vs expert %d/%d, $p=%s$.} \\"
+              % (p2["only_first"], p2["only_second"], pval(p2["mcnemar_p"]), h["B_FK_vs_expert_held"]["only_first"],
+                 h["B_FK_vs_expert_held"]["only_second"], pval(h["B_FK_vs_expert_held"]["mcnemar_p"])),
               r"\bottomrule", r"\end{tabular}"]
     (out / "main.tex").write_text("\n".join(lines) + "\n")
 
 
-def table_memory(mem, out):
-    """Memory study: three levels of stage memory, same data, split and scenes (memory/summary.json)."""
+def table_memory(mem, fk, out):
+    """Memory study: L0 (no memory) and three levels of stage memory with the learned FK, same data and scenes."""
     names = {"L0mlp": (r"L0 plain MLP regressor", "none"),
              "L1": (r"L1 four single-frame MLPs", "latch only"),
              "L2": (r"L2 GRU, no stop head", "hidden state only"),
-             "L3": (r"\textbf{L3 = B}: GRU + stop head", "hidden state + latch")}
+             "L3": (r"\textbf{L3 = B-FK}: GRU + stop head", "hidden state + latch")}
+    fm = fk["memory"]
     lines = [r"\begin{tabular}{@{}llcccc@{}}", r"\toprule",
-             r"Policy & Stage memory & Val./208 & Fresh/300 & $p$ vs B$^*$ & Never done$^\dagger$ \\", r"\midrule"]
+             r"Policy & Stage memory & Val./208 & Fresh/300 & $p$ vs L3$^*$ & Never done$^\dagger$ \\", r"\midrule"]
     for lvl, (name, memo) in names.items():
-        v, f = mem["validation"][lvl], mem["fresh"][lvl]
-        p = "--" if f["vs_B"] is None else "$%s$" % pval(f["vs_B"]["mcnemar_p"])
-        lines.append(f"{name} & {memo} & {v['success']} & {f['success']} & {p} & "
-                     f"{v['all']['never_done']} / {f['all']['never_done']} " + r"\\")
+        if lvl == "L0mlp":
+            v, f = mem["validation"][lvl], mem["fresh"][lvl]
+            # L0 succeeds in no scene, so every L3 success is a discordant pair: exact McNemar p = 2 * 0.5^n.
+            assert f["success"] == 0
+            p, nd = min(1.0, 2 * 0.5 ** fm["fresh_L3"]["success"]), (v["all"]["never_done"], f["all"]["never_done"])
+        else:
+            v, f = fm[f"validation_{lvl}"], fm[f"fresh_{lvl}"]
+            p = f["paired"]["mcnemar_p"] if "paired" in f else None
+            nd = (v["mechanisms"]["never_done"], f["mechanisms"]["never_done"])
+        lines.append(f"{name} & {memo} & {v['success']} & {f['success']} & " + ("--" if p is None else "$%s$" % pval(p))
+                     + f" & {nd[0]} / {nd[1]} " + r"\\")
+    mech = lambda split, lvl, k: fm[f"{split}_{lvl}"]["mechanisms"][k]
     lines += [r"\midrule",
               r"\multicolumn{6}{@{}l@{}}{$^*$Exact McNemar, fresh set. $^\dagger$Base never stops (val./fresh).} \\",
               r"\multicolumn{6}{@{}l@{}}{L0: raw 21 inputs $\to$ raw 11 actions. Open-loop val.\ $R^2$ (wheels / torques):} \\",
               r"\multicolumn{6}{@{}l@{}}{\quad MLP %.2f / %.2f, linear %.2f / %.2f.} \\"
               % tuple(mem["L0_open_loop"][k][f"r2_mean_{g}"] for k in ("mlp", "linear") for g in ("wheels", "torques")),
               r"\multicolumn{6}{@{}l@{}}{Wheels restart after ``done'' (val./fresh): L2 %d / %d; with a latch impossible.} \\"
-              % (mem["validation"]["L2"]["all"]["restarts"], mem["fresh"]["L2"]["all"]["restarts"]),
+              % (mech("validation", "L2", "restarts"), mech("fresh", "L2", "restarts")),
               r"\multicolumn{6}{@{}l@{}}{Arm drift before ``done'', median (rad): L1 %.2f, L2 %.2f, L3 %.2f (validation).} \\"
-              % tuple(mem["validation"][l]["all"]["arm_drift_rad_median"] for l in ("L1", "L2", "L3")),
+              % tuple(mech("validation", l, "arm_drift_rad_median") for l in ("L1", "L2", "L3")),
               r"\bottomrule", r"\end{tabular}"]
     (out / "memory.tex").write_text("\n".join(lines) + "\n")
 
 
-def table_ablation(an, mem, results, out):
+def table_ablation(an, mem, fk, results, out):
     grid_b = json.loads((results / "grid_B_park" / "grid.json").read_text())
     grid_v3 = json.loads((results / "grid_v3_bearing" / "grid.json").read_text())
     g = an["gravity_ablation"]
     hold = an["hold"]
     seeds = an["seeds"]
+    u = fk["gru_trained_on_urdf_ee"]["validation"]["success"]
     rows = [
+        (r"\textbf{B-FK}: learned FK, no $g(q)$", r"\textbf{%d}" % fk["validation"]["B_FK"]["success"], "final"),
+        ("B-FK, GRU trained on URDF $e$", str(u), "train/run mismatch"),
+        (r"\emph{URDF FK and $g(q)$ (rows below):}", None, None),
         ("B, direct torque output", str(mem["torque_validation"]["success"]), "no PD layer"),
         ("v3: hand-made bearing feature", f"{grid_v3['chosen']['success_1cm']}", "gains %g/%g/%g" % (
             grid_v3["chosen"]["kp"], grid_v3["chosen"]["kd"], grid_v3["chosen"]["lead"])),
@@ -356,6 +390,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", type=Path, default=Path("results/final_run"))
     parser.add_argument("--artifacts", type=Path, help="Full run directory, only to (re)extract the per-step trace CSVs")
+    parser.add_argument("--fk-rollouts", type=Path, default=Path("artifacts/fk_study"),
+                        help="run_fk_study.sh roll-outs, only to (re)extract the per-step trace CSVs")
     parser.add_argument("--output", type=Path, default=Path("report"))
     args = parser.parse_args()
     suite = json.loads((args.results / "suite" / "summary.json").read_text())
@@ -363,15 +399,16 @@ def main():
     figs, tabs = args.output / "figures", args.output / "tables"
     figs.mkdir(parents=True, exist_ok=True)
     tabs.mkdir(parents=True, exist_ok=True)
-    fig_conditions(suite, figs)
+    fk = json.loads((args.results / "fk_run" / "summary.json").read_text())  # summarize_fk.py
+    fig_conditions(dict(conditions=fk_condition_rows(fk)), figs)
     fig_learning_curve(an, figs)
-    fig_hold(hold_trace(args.results, args.artifacts), figs)
-    table_main(suite, an, tabs)
+    fig_hold(hold_trace(args.results, args.artifacts, args.fk_rollouts), figs)
+    table_main(suite, an, fk, args.results, tabs)
     mem = json.loads((args.results / "memory" / "summary.json").read_text())
-    fig_memory_trace(memory_trace(args.results, args.artifacts), figs)
-    fig_fit_vs_success(an, mem, args.results, figs)
-    table_memory(mem, tabs)
-    table_ablation(an, mem, args.results, tabs)
+    fig_memory_trace(memory_trace(args.results, args.artifacts, args.fk_rollouts), figs)
+    fig_fit_vs_success(an, mem, fk, args.results, figs)
+    table_memory(mem, fk, tabs)
+    table_ablation(an, mem, fk, args.results, tabs)
     table_learning(an, tabs)
     print("wrote", sorted(str(p) for p in (*figs.iterdir(), *tabs.iterdir())))
 

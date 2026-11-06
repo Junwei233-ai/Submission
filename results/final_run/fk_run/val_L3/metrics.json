@@ -1,11 +1,11 @@
 {
   "scenes": 208,
   "process_errors": 0,
-  "success_1cm": 198,
-  "rate_1cm": 0.9519230769230769,
+  "success_1cm": 200,
+  "rate_1cm": 0.9615384615384616,
   "wilson95_1cm": [
-    0.9137763190307719,
-    0.9736792137824244
+    0.9259529993252896,
+    0.9803845661009535
   ],
   "success_5cm": 206,
   "rate_5cm": 0.9903846153846154,
@@ -13,14 +13,14 @@
     0.9656244659608073,
     0.9973591973045761
   ],
-  "median_final_error_m": 0.009989821914652117,
-  "mean_success_time_s": 9.618227272727783,
+  "median_final_error_m": 0.0099900146231299,
+  "mean_success_time_s": 9.280685000000371,
   "base_latched": 207,
-  "median_base_done_s": 6.260000000000425,
-  "median_base_offset_from_rule_m": 0.07525040971394263,
-  "median_abs_base_yaw_offset_rad": 0.047268848325677126,
+  "median_base_done_s": 6.300000000000439,
+  "median_base_offset_from_rule_m": 0.08915464463240401,
+  "median_abs_base_yaw_offset_rad": 0.057740786106750264,
   "stop_reasons": {
-    "step_limit": 10,
-    "success": 198
+    "step_limit": 8,
+    "success": 200
   }
 }

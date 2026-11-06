@@ -185,9 +185,11 @@ class LearnedFK:
             self.net = NumpyMLP({k: data[k] for k in data.files}, "fk")
 
     def __call__(self, q_arm, base_pos, yaw):
+        """EE world position; broadcasts over rows (training) or takes one state (run time)."""
         local = self.net(q_arm)
         c, s = np.cos(yaw), np.sin(yaw)
-        return np.asarray(base_pos, dtype=float) + np.array((c * local[0] - s * local[1], s * local[0] + c * local[1], local[2]))
+        return np.asarray(base_pos, dtype=float) + np.stack(
+            (c * local[..., 0] - s * local[..., 1], s * local[..., 0] + c * local[..., 1], local[..., 2]), axis=-1)
 
 
 def sigmoid(x):

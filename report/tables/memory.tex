@@ -1,16 +1,16 @@
 \begin{tabular}{@{}llcccc@{}}
 \toprule
-Policy & Stage memory & Val./208 & Fresh/300 & $p$ vs B$^*$ & Never done$^\dagger$ \\
+Policy & Stage memory & Val./208 & Fresh/300 & $p$ vs L3$^*$ & Never done$^\dagger$ \\
 \midrule
-L0 plain MLP regressor & none & 0 & 0 & $2\times10^{-89}$ & 49 / 87 \\
-L1 four single-frame MLPs & latch only & 189 & 272 & $8\times10^{-6}$ & 11 / 12 \\
-L2 GRU, no stop head & hidden state only & 54 & 83 & $2\times10^{-64}$ & 58 / 78 \\
-\textbf{L3 = B}: GRU + stop head & hidden state + latch & 207 & 296 & -- & 1 / 2 \\
+L0 plain MLP regressor & none & 0 & 0 & $4\times10^{-87}$ & 49 / 87 \\
+L1 four single-frame MLPs & latch only & 168 & 239 & $2\times10^{-12}$ & 13 / 13 \\
+L2 GRU, no stop head & hidden state only & 43 & 86 & $3\times10^{-61}$ & 92 / 106 \\
+\textbf{L3 = B-FK}: GRU + stop head & hidden state + latch & 200 & 288 & -- & 1 / 1 \\
 \midrule
 \multicolumn{6}{@{}l@{}}{$^*$Exact McNemar, fresh set. $^\dagger$Base never stops (val./fresh).} \\
 \multicolumn{6}{@{}l@{}}{L0: raw 21 inputs $\to$ raw 11 actions. Open-loop val.\ $R^2$ (wheels / torques):} \\
 \multicolumn{6}{@{}l@{}}{\quad MLP 0.93 / 0.95, linear 0.06 / 0.67.} \\
-\multicolumn{6}{@{}l@{}}{Wheels restart after ``done'' (val./fresh): L2 122 / 188; with a latch impossible.} \\
-\multicolumn{6}{@{}l@{}}{Arm drift before ``done'', median (rad): L1 0.06, L2 0.31, L3 0.04 (validation).} \\
+\multicolumn{6}{@{}l@{}}{Wheels restart after ``done'' (val./fresh): L2 97 / 148; with a latch impossible.} \\
+\multicolumn{6}{@{}l@{}}{Arm drift before ``done'', median (rad): L1 0.10, L2 0.51, L3 0.10 (validation).} \\
 \bottomrule
 \end{tabular}

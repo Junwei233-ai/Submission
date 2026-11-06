@@ -1,8 +1,8 @@
 # Method: GRU behaviour cloning policy
 
 This document describes the final method (B-FK), its URDF reference (variant B) and the baseline (v3).
-B-FK and B share the GRU weights and gains, and differ only in where the end-effector position and gravity
-term come from (Section 9.1). B and v3 differ only in four input features (Section 3). All numbers come from the final run; the result
+B-FK and B share the design and gains, and differ only in where the end-effector position and gravity
+term come from (Section 9.1); B-FK's GRU is trained on the learned end-effector estimate. B and v3 differ only in four input features (Section 3). All numbers come from the final run; the result
 summaries are in `results/final_run/`.
 
 ```
@@ -240,11 +240,14 @@ B-FK replaces both uses of the URDF in the policy:
   - Validation error on the final frame: median 2.0 mm, p95 6.2 mm, maximum 15.4 mm.
 - **Gravity.** The term is removed (`--gravity zero`), so `τ = Kp (q_ref − q) + Kd (v − qd)`. The integrated
   reference acts like an integral term, as described above.
-- **Unchanged.** The GRU and parking MLP weights, the latch and the gains. The GRU was trained on recorded
-  end-effector errors. At run time it receives the MLP's estimate, so an MLP error appears as an error in
-  e, and the arm stops where the estimated error is zero.
-- **Gains.** B's 200/30/0.2 are reused. They were selected with the URDF model and checked on validation
-  with the learned model (198/208), not searched again.
+- **GRU trained on the learned e.** `staged_gru_train.py --fk-model fk_run/fk.npz` computes the end-effector
+  position in every training feature with the MLP from the recorded joint angles and base pose, exactly as at
+  run time, so the recorded (URDF) `ee_pos` is never read. Same settings and seed as B; best epoch 78 of 80;
+  latch length N = 1 re-chosen on validation. L2 and the L1 arm MLP are retrained the same way.
+- The arm stops where the *estimated* error is zero, so the MLP's error bounds the final accuracy.
+- **Gains.** B's 200/30/0.2 are reused (selected with the URDF model), not searched again.
+- **Results** (README Section 7.1.1): 200/208 on validation, 288/300 on the fresh test (expert 293, p = 0.33;
+  variant B 296, p = 0.039). The earlier version with the GRU trained on URDF e reached 198/208 and 288/300.
 
 `staged_rollout.py` refuses `--fk-model` without `--gravity zero`. In B-FK, pinocchio is used only to score
 the true end-effector error, which the policy never reads.
@@ -252,7 +255,7 @@ the true end-effector error, which the policy never reads.
 ## 10. Evaluation and results
 
 See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summary.md`. B-FK's results are
-in README Section 7.1.1 and `results/final_run/fk_run/`: 198/208 on validation and 289/300 on the fresh test.
+in README Section 7.1.1 and `results/final_run/fk_run/`: 200/208 on validation and 288/300 on the fresh test.
 The rest of this section reports variant B. In brief:
 
 - **Fresh test** (300 scenes, seed 2026, unfiltered): B 296, v3 289, expert 293. B vs expert p = 0.55;

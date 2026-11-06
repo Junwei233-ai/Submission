@@ -10,8 +10,9 @@ Scene sets (all versioned in scenes/, so this runs on any machine with the RoboE
   robustness   the first 60 expert-successful fresh scenes (use with --perturb, e.g. "--push-base 20")
   far_target, high_target, low_target, wide_start   out-of-distribution families (40 scenes each)
 
-Controllers: B-FK (final method: learned forward kinematics, no gravity term), B (the same GRU with the
-URDF forward kinematics and gravity term, for reference), v3 (baseline with the URDF), expert (the template).
+Controllers: B-FK (final method: no robot model; GRU trained and run on the learned forward kinematics,
+no gravity term), B (the same design with the URDF forward kinematics and gravity term, for reference),
+v3 (baseline with the URDF), expert (the template).
 The learned controllers never import the expert module; each result records this
 ("expert_module_loaded": false).
 
@@ -36,7 +37,8 @@ RESULTS = ROOT / "results" / "final_run"
 SETS = {"fresh": "fresh_test", "robustness": "robustness_60", "far_target": "ood/far_target",
         "high_target": "ood/high_target", "low_target": "ood/low_target", "wide_start": "ood/wide_start"}
 # Reported 1 cm successes (README Section 7) for the unperturbed sets, to compare against.
-REPORTED = {("B-FK", "fresh"): "289/300", ("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
+REPORTED = {("B-FK", "fresh"): "288/300", ("B-FK", "far_target"): "40/40", ("B-FK", "high_target"): "17/40",
+            ("B-FK", "low_target"): "3/40", ("B-FK", "wide_start"): "29/40", ("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
             ("B", "far_target"): "40/40", ("expert", "far_target"): "40/40",
             ("B", "high_target"): "40/40", ("expert", "high_target"): "15/40",
             ("B", "low_target"): "29/40", ("expert", "low_target"): "30/40",
@@ -46,7 +48,7 @@ REPORTED = {("B-FK", "fresh"): "289/300", ("B", "fresh"): "296/300", ("v3", "fre
 def controller_args(name):
     if name == "expert":
         return ["--base", "expert", "--arm", "expert"]
-    model = {"B-FK": "gru_B_park", "B": "gru_B_park", "v3": "gru_v3_bearing"}[name]
+    model = {"B-FK": "fk_run/gru_B_fk", "B": "gru_B_park", "v3": "gru_v3_bearing"}[name]
     grid = {"B-FK": "grid_B_park", "B": "grid_B_park", "v3": "grid_v3_bearing"}[name]
     chosen = json.loads((RESULTS / grid / "grid.json").read_text())["chosen"]
     learned = ["--fk-model", str(RESULTS / "fk_run" / "fk.npz"), "--gravity", "zero"] if name == "B-FK" else []

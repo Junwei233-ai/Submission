@@ -29,16 +29,18 @@
 Behaviour cloning (BC) regresses the expert's action on the current observation. The template expert
 for a mobile manipulator is a two-stage state machine (drive, then reach) whose stage is not observed,
 so we ask what a cloned policy must remember. Taken literally, an MLP from the raw inputs to the raw
-actions fits the demonstrations ($R^2=0.95$ for torques) yet reaches none of 300 fresh targets. On identical data, split and scenes we compare three
-levels of stage memory: four single-frame MLPs with a hand-coded latch, a GRU that must keep the stage
-in its hidden state, and a GRU with an explicit, latched stop output. They reach 272, 83 and 296 of 300
-fresh scenes (expert: 293). Implicit memory alone fails: in 188 of 300 runs the wheels restart after
-stopping. The recurrent policy with an explicit latch matches the expert ($p=0.55$), holds the target
-as well, recovers from base pushes that defeat the expert (56/60 vs 38/60), and runs in 87\,$\mu$s per
-1\,kHz step. A second finding concerns how to act: regressing torques directly fails in all 208
-validation scenes, while a learned velocity field tracked by a PD layer succeeds in 207. Open-loop loss
-cannot tell the working memory design from a failing one, and replaying the frozen policy shows that its arm has learned a map
-close to the Jacobian pseudo-inverse, which it never sees.
+actions fits the demonstrations ($R^2=0.95$ for torques) yet reaches none of 300 fresh targets. Our
+policy contains no robot model: a learned forward-kinematics network supplies the end-effector error,
+and no gravity model is used. On identical data, split and scenes we compare three levels of stage
+memory: four single-frame MLPs with a hand-coded latch, a GRU that must keep the stage in its hidden
+state, and a GRU with an explicit, latched stop output. They reach 239, 86 and 288 of 300 fresh scenes
+(expert: 293). Implicit memory alone fails: in 148 of 300 runs the wheels restart after stopping, while
+its open-loop loss matches the latched policy's. The recurrent policy with an explicit latch is not
+significantly worse than the expert ($p=0.33$), recovers from base pushes that defeat it (53/60 vs 38/60)
+and runs in 342\,$\mu$s per 1\,kHz step. Regressing torques directly fails in all 208 validation scenes,
+while a learned velocity field tracked by a PD layer succeeds, and replaying the policy shows that this
+field approximates the Jacobian pseudo-inverse. The price of removing the robot model is accuracy near
+the FK network's error and poor extrapolation to unseen arm postures.
 \end{abstract}
 
 \section{Introduction}
@@ -49,14 +51,15 @@ compensation. Our task is to learn a regressor from the measured state $(\texttt
 \texttt{wheel\_cmds} (4) and \texttt{torque\_arm} (7) by behaviour cloning (BC)~\cite{pomerleau1989}:
 supervised learning on expert trajectories.
 
-\textbf{Assumptions and constraints.} (i) Simulation only (PyBullet, 1\,kHz). (ii) The learner may use the
-listed measurements, the target, and the robot's kinematic model to compute the end-effector position;
-it may \emph{not} read the expert's internal variables (phase, $q_\text{des}$, navigation state) or call
-the expert at run time. We enforce this in code: learned rollouts abort if the expert module is
-imported. No sensor is added: the end-effector position is computed from \texttt{q\_mes} and the base
-pose by forward kinematics, the same derived signal the expert uses. Force or contact sensing is not
-needed because the task is free-space reaching, and \texttt{qd\_mes} is used only for damping in the PD
-layer (Section~\ref{sec:features}). (iii) Success follows the template's \texttt{check\_stop}: base finished, error $<1$\,cm,
+\textbf{Assumptions and constraints.} (i) Simulation only (PyBullet, 1\,kHz). (ii) At run time the
+learner reads only the listed measurements and the target. It may \emph{not} read the expert's internal
+variables (phase, $q_\text{des}$, navigation state) or call the expert; learned rollouts abort if the
+expert module is imported. (iii) The policy contains \emph{no robot model}: the end-effector position it
+needs is predicted from \texttt{q\_mes} by a learned forward-kinematics network, and no gravity model is
+used. The URDF serves only to score the true error. No sensor is added; the end-effector positions
+recorded in the demonstrations serve as training labels only. Force or contact sensing is not needed
+for free-space reaching, and \texttt{qd\_mes} is used only for damping in the PD layer
+(Section~\ref{sec:features}). (iv) Success follows the template's \texttt{check\_stop}: base finished, error $<1$\,cm,
 $t>8$\,s; episodes end at 40\,s.
 
 BC assumes that the expert's action is a function of what the learner observes. Two things break this
@@ -81,15 +84,13 @@ specific information a policy must remember rather than giving it as much histor
 \subsection{Expert data}
 We sample 1500 scenes (target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $\pm0.6$\,m, any
 heading; arm start $\pm0.15$\,rad around the template posture) and run the expert headless at 1\,kHz,
-recording inputs, actions and end-effector position. We keep the 1391 runs that end within 1\,cm. Of the other 109, 55
-stalled (48 of them more than 1\,cm away) and 54 ended just above 1\,cm (at most 1.004\,cm, all low
-targets). Dropping stalls keeps failed behaviour out of the labels; the strict 1\,cm rule costs a few
-low-target demonstrations, a trade of quantity for quality (the fresh test set is not filtered,
-Section~\ref{sec:protocol}). We split them by
+recording inputs, actions and end-effector position. We keep the 1391 runs that end within 1\,cm (55 stalled, 54 ended at
+1.000--1.004\,cm): quality over quantity, as failed behaviour stays out of the labels (the fresh test set
+is not filtered). We split them by
 whole trajectory (seed 42) into 973/208/210 for training, validation and a development test set;
 splitting by frame would leak near-identical neighbouring frames. Normalisation uses training data only.
-The learning curve (Fig.~\ref{fig:lc}) shows how much data is needed: success rises from 157/208 with 97
-trajectories to 207/208 with 973, and the three validation losses fall monotonically.
+The learning curve (Fig.~\ref{fig:lc}, URDF variant) shows how much data is needed: success rises from
+157/208 with 97 trajectories to 207/208 with 973, and the three validation losses fall monotonically.
 
 \subsection{What to imitate: labels from states}
 Expert torques mix gravity, dynamics and the expert's own PD reaction, so they are a poor target for a
@@ -100,17 +101,17 @@ spirit of BC from observation~\cite{torabi2018}:
 \item \textbf{Arm:} desired joint velocity $v_k=(q_{t+10}-q_{t-10})/20$\,ms, a central difference of
 recorded joint angles.
 \item \textbf{Stop:} $c_k=\mathbb 1[t\ge t_\text{stop}]$, where $t_\text{stop}$ is the first step after which
-every recorded wheel command stays zero. It needs only the recorded actions, yet matched the expert's
-internal ``navigation done'' phase on 1390 of 1391 demonstrations (the other differs by 1\,ms;
-checked once with \texttt{check\_stop\_label.py}, which is the only code that reads the phase).
+every recorded wheel command stays zero. It matches the expert's internal ``done'' phase on 1390 of
+1391 demonstrations (checked once; no other code reads the phase).
 \item \textbf{Parking pose:} the recorded base pose at $t_\text{stop}$, one sample per trajectory.
 \end{itemize}
 
 \subsection{Policy}\label{sec:policy}
-Fig.~\ref{fig:arch} shows the policy. Every 10\,ms a GRU~\cite{cho2014} (128 hidden units) reads 18
-features in the base frame: target position and distance, the parking pose predicted by a small MLP
-from the target, the end-effector error $e$, and the 7 joint angles. It outputs 4 wheel commands, a
-stop logit $s_k$, and $M\in\mathbb R^{7\times3}$.
+Fig.~\ref{fig:arch} shows the final policy, \emph{B-FK}. Every 10\,ms a GRU~\cite{cho2014} (128 hidden
+units) reads 18 features in the base frame: target position and distance, the parking pose predicted by a
+small MLP from the target, the end-effector error $e$, and the 7 joint angles. It outputs 4 wheel
+commands, a stop logit $s_k$, and $M\in\mathbb R^{7\times3}$. The error $e=t-\hat p(q)$ uses the
+end-effector position $\hat p$ predicted by a learned forward-kinematics (FK) network, never the URDF.
 
 \begin{figure}[t]
 \centering
@@ -119,43 +120,48 @@ stop logit $s_k$, and $M\in\mathbb R^{7\times3}$.
   fixed/.style={box, fill=gray!12}, arr/.style={-{Latex[length=1.5mm]}}]
 \node[box] (in) {state, target\\$\to$ 18 features\\(base frame)};
 \node[box, above=of in] (park) {parking MLP\\target $\to$ pose};
+\node[box, below=of in] (fk) {FK MLP\\$q \to \hat p$};
 \node[box, right=of in, minimum height=14mm] (gru) {GRU\\128\\100\,Hz};
 \node[box, right=of gru, yshift=6mm] (w) {wheels (4)};
 \node[box, right=of gru] (s) {stop logit};
 \node[box, right=of gru, yshift=-6mm] (m) {$M$ ($7{\times}3$)};
 \node[fixed, right=of s] (latch) {latch\\$N$ steps};
-\node[fixed, below=5mm of latch] (pd) {$v=Me$; $q_\text{ref}{+}{=}v\,dt$\\$\tau=K_p(q_\text{ref}-q)$\\$+K_d(v-\dot q)+g(q)$};
-\draw[arr] (park) -- (in); \draw[arr] (in) -- (gru);
+\node[fixed, below=5mm of latch] (pd) {$v=Me$; $q_\text{ref}{+}{=}v\,dt$\\$\tau=K_p(q_\text{ref}-q)$\\$+K_d(v-\dot q)$};
+\draw[arr] (park) -- (in); \draw[arr] (fk) -- (in); \draw[arr] (in) -- (gru);
 \draw[arr] (gru) -- (w); \draw[arr] (gru) -- (s); \draw[arr] (gru) -- (m);
 \draw[arr] (s) -- (latch); \draw[arr] (m.south) |- (pd.west);
 \draw[arr] (latch) -- node[right]{gates} (pd);
 \end{tikzpicture}
-\caption{Policy. White: learned from demonstrations. Grey: fixed structure. Before the latch the
-wheels follow the GRU and the arm holds its start pose; after it the wheels stop and the arm reaches.
-The PD layer runs at 1\,kHz.}
+\caption{Policy B-FK. White: learned from demonstrations. Grey: fixed structure. No robot model is
+used. Before the latch the wheels follow the GRU and the arm holds its start pose; after it the wheels
+stop and the arm reaches. The FK MLP and the PD layer run at 1\,kHz.}
 \label{fig:arch}
 \end{figure}
 
 \textbf{Velocity field $v=Me$.} The arm's desired joint velocity is $v=Me$. This guarantees $v=0$ at
 $e=0$, so the arm stops at the target, and $M$ has the shape of a damped least-squares IK map
 $J^\top(JJ^\top+\lambda^2I)^{-1}$ that the network learns without a Jacobian (tested in Section~\ref{sec:arm}). Because $e$ is recomputed
-every 1\,ms from the current state, a model error changes the \emph{direction} of approach but not the
-fixed point: the loop corrects its own mistakes instead of compounding them. A reference
-$q_\text{ref}\leftarrow\text{clip}(q_\text{ref}+v\,dt,\;q\pm\text{lead})$ is tracked by
-$\tau=K_p(q_\text{ref}-q)+K_d(v-\dot q)+g(q)$; this is how the robot actually receives
-\texttt{torque\_arm}. Regressing torques directly instead (same GRU, inputs and stop head) succeeds in
-0/208 validation scenes (Table~\ref{tab:ablation}): small errors in a gravity-dominated signal are
-integrated twice by the dynamics and nothing pulls the arm back.
-What we learn is the \emph{behaviour}: where to drive, when to stop and how to move the arm. The PD
-layer is only the interface that turns a desired velocity into \texttt{torque\_arm}; it contains no
-task knowledge (no target, no IK, no stage), the ablation above shows it is necessary, and its
-model-based term $g(q)$ can even be removed (Section~\ref{sec:ablations}).
+every 1\,ms, a model error changes the \emph{direction} of approach but not the fixed point, so errors
+are corrected rather than compounded. A reference $q_\text{ref}\leftarrow\text{clip}(q_\text{ref}+v\,dt,\;q\pm\text{lead})$,
+integrated from the learned $v$ (not the expert's $q_\text{des}$), is tracked by
+$\tau=K_p(q_\text{ref}-q)+K_d(v-\dot q)$ to produce \texttt{torque\_arm}. Regressing torques directly
+instead succeeds in 0/208 validation scenes (Table~\ref{tab:ablation}): errors in a gravity-dominated
+signal are integrated by the dynamics and nothing pulls the arm back. The PD layer contains no task
+knowledge and no robot model; without gravity compensation the integrated reference acts as an integral
+term ($K_p\cdot\text{lead}=40$\,N\,m exceeds the 17.7\,N\,m median shoulder load), and the held arm sags
+by about 0.1\,rad before reaching.
+
+\textbf{Learned forward kinematics.} An MLP ($2\times512$ ReLU, 268,291 parameters) maps the 7 joint
+angles to the end-effector position in the base frame, placed in the world by the measured base pose. Its
+labels are end-effector positions recorded by the simulator in expert runs of the 973 training scenes,
+continued for 2\,s after success to cover converged poses. Its final-frame validation error has a median
+of 2.0\,mm (p95 6.2, max 15.4\,mm); since the arm stops where the \emph{predicted} error is zero, this
+bounds the final accuracy. The GRU is trained on $e$ from this network, exactly as at run time.
 
 \textbf{Learned parking pose (variant B) vs.\ a hand-made feature (v3).} The parking pose is not
-translation invariant: it lies on the origin--target ray. Our baseline v3 encodes this with a world-bearing
-feature $\text{atan2}(t_y,t_x)-\psi$ copied from the expert's code. Variant B instead learns it: an MLP
-(2$\times$128 ReLU, 17,540 parameters) maps the target to the parking pose, which enters the GRU as
-base-frame coordinates. This removes the last expert formula from the inputs.
+translation invariant: it lies on the origin--target ray. The baseline v3 encodes this with a world-bearing
+feature copied from the expert's code; B instead learns it with an MLP (2$\times$128 ReLU, 17,540
+parameters) from the target, removing the last expert formula from the inputs.
 
 \textbf{Why these features.}\label{sec:features} The expert's base law uses only relative quantities (distance, heading and
 yaw errors), so all features are expressed in the base frame and angles as $\sin/\cos$. Joint velocities
@@ -165,19 +171,16 @@ are omitted: they are noisy and the PD layer already uses them.
 $c_k$ and latched after $N$ consecutive positive outputs, so the stage can never be revisited. To test
 whether this explicit memory is needed, we compare three policies (Section~\ref{sec:memory}):
 \begin{itemize}
-\item \textbf{L1, latch only (no learned memory):} our first design, four single-frame MLPs: the parking
-MLP; a wheel MLP and a stop classifier on the base's distance and heading to the predicted parking pose;
-and an arm MLP that maps end-effector error and joint angles to $v$, with the same PD layer. The only
-memory is the hand-coded latch on the stop classifier.
-\item \textbf{L2, hidden state only:} variant B without the stop output. The stage must be kept in the
-GRU's hidden state, and the arm is never gated. For evaluation only, the base counts as ``done'' while
-every wheel command is below 0.05\,rad/s.
-\item \textbf{L3, hidden state + latch:} variant B, our method.
+\item \textbf{L1, latch only:} our first design, four single-frame MLPs (parking pose; wheels and stop
+from the base's offset to the parking pose; arm $v$ from $e$ and $q$, same PD layer). The only memory is
+a hand-coded latch on the stop classifier.
+\item \textbf{L2, hidden state only:} B-FK without the stop output; the stage must live in the hidden
+state and the arm is never gated (``done'' for evaluation: all wheel commands below 0.05\,rad/s).
+\item \textbf{L3, hidden state + latch:} B-FK, our method.
 \end{itemize}
-L2 and L3 differ only in the stop head: same inputs, data, training and gains. L1 also differs in
-architecture; its arm gains come from the same grid and rule on validation (with the expert base, as
-in its original protocol). L1 and L2 were trained after B was frozen, on the same 973 trajectories, and
-no choice used the fresh set. The study is also our answer to whether the model should see a single
+All three use the learned FK, no gravity term and the same gains (200/30/0.2), so they share one arm
+layer. L2 and L3 differ only in the stop head: same inputs, data and training. L1 also differs in
+architecture. All were trained on the same 973 trajectories, and no choice used the fresh set. The study is also our answer to whether the model should see a single
 time instant or a temporal interval: L0 and L1 see one instant, L2 and L3 the whole history through the
 GRU state, and L1 vs.\ L3 asks how much the interval adds once the one missing bit is supplied.
 
@@ -192,88 +195,87 @@ $(Me-v)/\sigma_v$ over frames after $t_\text{stop}$ only (the arm is held before
 We use Adam ($10^{-3}$), batches of 32 whole trajectories with masking, full back-propagation through
 time with gradient clipping at 1, and early stopping on validation loss (patience 8, at most 80 epochs).
 Although the arm loss covers only post-stop frames, its gradient flows back through the hidden state, so
-the GRU can store during navigation what the arm needs later. Variant B trains in 31\,min on a CPU
-(best epoch 78). The run-time forward pass is NumPy; it matches PyTorch to $7.7\times10^{-6}$.
+the GRU can store during navigation what the arm needs later. The GRU of B-FK trains in 50\,min on a
+shared CPU (best epoch 78 of 80); the FK MLP (MSE, Adam with a cosine schedule, 60 epochs) in 10\,min.
+The run-time forward pass is NumPy and matches PyTorch to $10^{-5}$.
 
 \textbf{Hyperparameters chosen on validation.} The latch length $N$ is chosen open-loop on validation
-sequences (smallest mean offset to $t_\text{stop}$; $N=1$ for B). The gains $(K_p,K_d,\text{lead})$ cannot
-be learned with the network (the loss does not depend on them, and closed-loop success is not
-differentiable through the simulator), so we grid-search $\{50,100,200\}\times\{10,30\}\times\{0.1,0.2\}$
-in closed loop on all 208 validation scenes, with a rule fixed beforehand: most successes, then shortest
-mean time, then fewest torque-clipped steps. With 12 cheap points and a flat landscape (10 of 12 give
-206--207 for B), grid search is preferable to Bayesian optimisation. B chose 200/30/0.2, v3 100/10/0.1.
+sequences (smallest mean offset to $t_\text{stop}$; $N=1$ for B). The gains $(K_p,K_d,\text{lead})$ do not
+enter the loss and success is not differentiable through the simulator, so we grid-search
+$\{50,100,200\}\times\{10,30\}\times\{0.1,0.2\}$ in closed loop on the 208 validation scenes with a rule
+fixed beforehand (most successes, then shortest time, then fewest clipped steps). With 12 points and a
+flat landscape (10 of 12 give 206--207), grid search beats Bayesian optimisation. The grid was run for the
+URDF variant B (the same design with analytic FK and $g(q)$), which chose 200/30/0.2; B-FK reuses these
+gains.
 
 \section{Experiments and Results}
 
 \subsection{Protocol}\label{sec:protocol}
-During development the original test split was used three times and variant B was designed after
-inspecting its failures, so it is no longer unbiased. We therefore fixed a protocol before seeing
-results: retrain both models, choose gains on validation, check that development numbers reproduce
-(within $\pm3$ scenes: 204 vs 205 for v3, 208 vs 206 for B), \emph{freeze}, then collect 300 new scenes
-(seed 2026) and evaluate once. The fresh set is not filtered by expert success, which removes the
-selection bias of testing only on scenes the expert solved. All controllers run on identical scenes,
-so we compare them with the exact McNemar test on discordant pairs and report Wilson 95\% intervals.
+The original test split was used during development, so we fixed a protocol before seeing results:
+retrain, choose gains on validation, check that development numbers reproduce (within $\pm3$ scenes),
+\emph{freeze}, then collect 300 new scenes (seed 2026, not filtered by expert success) and evaluate once.
+This froze the URDF variant B; to remove the robot model we then trained the FK MLP, retrained the GRUs
+on its estimate with unchanged settings, and evaluated B-FK once. Runs are deterministic on one machine
+(across platforms 1--3 borderline scenes can flip). All controllers run on identical scenes, compared
+with the exact McNemar test; intervals are Wilson 95\%.
 
 \subsection{What must the policy remember?}\label{sec:memory}
 Table~\ref{tab:memory} compares L0 and the three levels on the 208 validation and 300 fresh scenes.
 
 \textbf{Plain regressors fail (L0: 0/300).} The L0 MLP fits recorded frames well (validation $R^2$ 0.93
 for wheels, 0.95 for torques), yet it never reaches a target: its closest approach has a median of
-51\,cm, and in the median run 91\% of its steps saturate the actuator limits. Low open-loop error is
-no evidence of a working controller: small torque errors are integrated by the dynamics, the robot
-leaves the demonstrated states~\cite{ross2011}, and the regressor extrapolates to saturated commands.
+51\,cm, and in the median run 91\% of its steps saturate the actuator limits. Small torque errors are integrated
+by the dynamics, the robot leaves the demonstrated states~\cite{ross2011}, and the regressor extrapolates.
 
-\textbf{Hidden state only fails (L2: 83/300).} Near the goal the regressed wheel speed approaches zero,
-but nothing makes it \emph{stay} zero: in 188 of 300 runs the wheels start again after first falling
-below the threshold, and in 78 they never fall below it. Because the arm is not gated, it also moves
-while the base drives (median drift 0.31\,rad vs 0.04\,rad for B), so reaching starts from a wrong
-posture on a moving base. The stage change is a discrete, irreversible event; a hidden state trained
-only to regress wheel speeds with MSE has no reason to represent it as one, and its small errors
-compound as BC theory predicts~\cite{ross2011}. Fig.~\ref{fig:memtrace} shows one fresh scene: L2's wheel
-command dips below the threshold at 10.6\,s, while the error is still 2\,cm, then rises again; the base
-creeps away and the error grows to a metre. L1 and L3 stop the wheels at once and reach the target.
+\textbf{Hidden state only fails (L2: 86/300).} Near the goal the regressed wheel speed approaches zero,
+but nothing makes it \emph{stay} zero: in 148 of 300 runs the wheels start again after first falling
+below the threshold, and in 106 they never fall below it. Because the arm is not gated, it also moves
+while the base drives (median drift on validation 0.51\,rad vs 0.10\,rad for L3, whose held arm only sags without
+gravity compensation), so reaching starts from a wrong posture on a moving base. The stage change is a discrete, irreversible event that a hidden state trained
+with MSE on wheel speeds has no reason to represent as one~\cite{ross2011}. Fig.~\ref{fig:memtrace} shows one fresh scene: L2's wheel
+command dips below the threshold at 8.0\,s and rises again; its ungated arm gets within 5\,mm at 12\,s,
+but the wheels never settle, the base creeps away and the run ends 52\,cm from the target. L1 and L3 stop
+the wheels at once and reach the target.
 
-\textbf{Offline loss cannot see this.} L0 already showed that a good fit does not imply success; L2
-makes the point sharper, because it shares B's architecture, inputs and loss. Its validation wheel loss (0.062) lies inside the spread of B's
-three seeds (0.054--0.067), yet L2 succeeds in 54 of 208 validation scenes and B in 207--208
-(Fig.~\ref{fig:fit}). Within one design the loss does rank models: along B's learning curve lower loss
-goes with higher success. It cannot compare designs that differ in what they remember, plausibly because the
-wheel loss is dominated by the driving phase while a wrong stage affects only a few frames near the stop.
-This is why we compare designs and select gains on closed-loop success, not on loss.
+\textbf{Offline loss cannot see this.} L2 shares L3's architecture, inputs and loss, and its
+validation wheel loss (0.062) is close to L3's (0.057) and inside the URDF variant's seed spread
+(0.054--0.067), yet it succeeds in 43 of 208 validation scenes against 200 (Fig.~\ref{fig:fit}). Within one design the loss ranks models (learning curve), but not across designs that differ in what they
+remember, plausibly because a wrong stage affects only a few frames near the stop. We therefore compare
+designs and select gains on closed-loop success.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{memory_trace.pdf}
 \caption{The four memory levels in one fresh scene. Top: largest wheel command (dashed: L2's ``done''
-threshold). Bottom: end-effector error. L0 saturates and drives off; L2's wheels stop briefly, restart and its base
-creeps away; L1 and L3 latch and succeed (dots).}
+threshold). Bottom: end-effector error. L2's wheels restart and its base creeps away; L1 and L3 latch and
+succeed (dots).}
 \label{fig:memtrace}
 \end{figure}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fit_vs_success.pdf}
-\caption{Open-loop fit vs.\ closed-loop success on validation. Same GRU, inputs and loss definition for
-all points; B on nested data subsets and three seeds, and L2, which only lacks the stop head.}
+\caption{Open-loop fit vs.\ closed-loop success on validation: same GRU and loss for all points. Filled:
+URDF variant (data subsets, three seeds, L2); open: learned FK (B-FK, L2).}
 \label{fig:fit}
 \end{figure}
 
-\textbf{A latch alone works surprisingly well (L1: 272/300).} Apart from the stage, the task is close to
+\textbf{A latch alone works reasonably well (L1: 239/300).} Apart from the stage, the task is close to
 Markov in our base-frame features, and the latch supplies the one missing bit. The single frame still
-costs accuracy: in 12 runs the stop classifier never fires, and when it fires the base parks further
-from the expert's pose (median 9.5\,cm vs 7.4\,cm for B), so the arm misses more often.
+costs accuracy: in 13 runs the stop classifier never fires, and when it fires the base parks further
+from the expert's pose (median 9.6\,cm vs 8.6\,cm for L3), so the arm misses more often.
 
-\textbf{Hidden state and latch together are best (L3: 296/300)}, significantly better than L1 (27 vs 3
-discordant scenes, $p=8\times10^{-6}$) and L2. Because L1 also differs in architecture, we attribute
+\textbf{Hidden state and latch together are best (L3: 288/300)}, significantly better than L1 (52 vs 3
+discordant scenes, $p=2\times10^{-12}$) and L2. Because L1 also differs in architecture, we attribute
 this gap less firmly than the L2--L3 gap, which isolates the stop head. The latch has a price: it turns
-a wrong stop decision into an irreversible one. Of B's four failures, two are latches that never fire
-and one fires at $t=0$ with the base 53\,cm from its parking pose; the fourth is an arm that stops
-6\,cm short.
+a wrong stop decision into an irreversible one. Of B-FK's 12 failures, two are stop decisions: one
+latch never fires, and one fires at $t\approx0$ with the end-effector 47\,cm from the target. The other
+ten come no closer than 1.1--2.4\,cm (eight), the range of the FK network's error, or 7--9\,cm (two, with
+the torque saturated in most steps).
 
 \textbf{Lesson.} In BC, memory should be split by kind, and more memory is not automatically better.
-One plausible reading of L2, which we did not test directly, is that its hidden state tracks a nuisance
-correlate of the stage, such as the current speed, rather than the stage itself, as in causal
-confusion~\cite{dehaan2019causal}. A discrete stage that must never be revisited
+Plausibly (untested) L2's hidden state tracks a nuisance correlate of the stage such as speed, as in
+causal confusion~\cite{dehaan2019causal}. A discrete stage that must never be revisited
 is best learned as an explicit, supervised and latched variable; continuous context (where to park,
 how fast to approach) can stay in a recurrent state.
 
@@ -285,18 +287,23 @@ how fast to approach) can stay in a recurrent state.
 \end{table}
 
 \subsection{Accuracy}
-Table~\ref{tab:main} gives the main results. B reaches 296/300 (98.7\%); the expert reaches 293/300.
-The difference is not significant ($p=0.55$), so we claim parity, not superiority. B also solves all 14
-scenes where the expert failed during collection, although no such scene was used for training. Its four failures are analysed in Section~\ref{sec:memory}.
+Table~\ref{tab:main} gives the main results. B-FK reaches 288/300 (96.0\%); the expert reaches 293/300.
+The difference is not significant ($p=0.33$), so we claim parity within the power of 300 scenes, not
+superiority. B-FK also solves 10 of the 14 scenes where the expert failed during collection, although no
+such scene was used for training. Its failures are analysed in Section~\ref{sec:memory}. With the
+analytic FK the same design reaches 296/300; the difference is the price of a model-free policy
+(Section~\ref{sec:ablations}).
 
 The template's success test only checks the \emph{first} entry into 1\,cm. To test accuracy beyond that
-instant we continue each successful run for 2\,s. B and the expert stay within 1\,cm in 286 runs each
-and settle to a median 0.6\,mm. v3 stays in only 171 of its 289 successes ($p=3\times10^{-28}$ vs B).
-Fig.~\ref{fig:hold} shows why: v3 oscillates around the target (dominant frequency 0.5--1.5\,Hz).
+instant we continue each successful run for 2\,s. B-FK stays within 1\,cm in 277 of its 288 successes,
+the expert in 286 of 293 ($p=0.09$). B-FK settles at a median 2.3\,mm from the target, the expert at
+0.6\,mm: the arm converges to where the FK network places the target (Fig.~\ref{fig:hold}). The
+URDF-based baseline v3, with its chosen $K_d=10$, stays in only 171 of 289 because it oscillates around
+the target (0.5--1.5\,Hz).
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{Fresh test set (300 scenes, seed 2026, evaluated once after freezing)}
+\caption{Fresh test set (300 scenes, seed 2026, evaluated once per controller)}
 \label{tab:main}
 \begin{adjustbox}{max width=\columnwidth}\input{tables/main.tex}\end{adjustbox}
 \end{table}
@@ -305,66 +312,70 @@ Fig.~\ref{fig:hold} shows why: v3 oscillates around the target (dominant frequen
 \centering
 \includegraphics[width=\columnwidth]{hold_trace.pdf}
 \caption{End-effector error in scene 2026\_0008, aligned at each controller's first 1\,cm success.
-B and the expert converge; v3 with its chosen $K_d=10$ oscillates.}
+The expert converges to the target, B-FK to its FK network's estimate a few millimetres away; v3 (URDF
+baseline) with its chosen $K_d=10$ oscillates.}
 \label{fig:hold}
 \end{figure}
 
 \subsection{Ablations: what makes cloning work}\label{sec:ablations}
-Table~\ref{tab:ablation} collects the ablations.
+Table~\ref{tab:ablation} collects the ablations. Most were run on the URDF variant B, the same design
+with the analytic FK and $g(q)$, before the robot model was removed.
 \begin{itemize}
+\item \textbf{Learned vs.\ analytic forward kinematics:} B-FK reaches 200/208 and 288/300, B 207/208 and
+296/300 (fresh: 2 vs 10 discordant, $p=0.04$). Removing the robot model costs about three points, and
+the cost is the FK network's error: eight of the ten extra failures come no closer than 1.1--2.4\,cm,
+where the network already believes the error is zero.
+\item \textbf{Training on the error the policy sees:} a GRU trained on URDF $e$ but run with the learned
+FK reaches 198/208 and 288/300, close to B-FK (200, 288): retraining matters for consistency, not success.
 \item \textbf{Action representation} decides feasibility: direct torque regression reaches 0/208 (its
 closest approach has a median of 13.9\,cm), while the velocity field reaches 207. The base still latches
 in 207 of these runs, so the failure lies entirely in how the arm acts.
 \item \textbf{Learned vs.\ hand-made parking information:} 207 vs 205 on validation and 296 vs 289 on the
 fresh test ($p=0.09$). Learning the pose is at least as good as copying the expert's formula.
-\item \textbf{Gravity model:} removing $g(q)$ leaves B unchanged at the chosen gains (207/208). The
-integrated reference acts as an integral term, and $K_p\cdot\text{lead}=40$\,N\,m exceeds the shoulder's
-gravity load (median recorded torque 17.7\,N\,m). At 50/30/0.1 (5\,N\,m) the arm sags (57/208). The
-robot's dynamic model is therefore not required.
-\item \textbf{Damping, a lesson about the metric:} swapping gains moves the oscillation with $K_d$:
-v3 with $K_d=30$ holds in 278/289 runs, B with $K_d=10$ in only 144/296. Neither change alters the 1\,cm
-success count. Our selection rule broke ties by speed, and a first-entry success test cannot see the
-missing damping, so it favoured the under-damped gains for v3. We found this on the test set, so we
-report it as a diagnosis and did not retune v3; the fix is to include holding in the selection rule.
-\item \textbf{Seeds:} GRU seeds 1 and 2 reach 207 and 208, so the result is not a lucky initialisation.
+\item \textbf{Gravity model:} removing $g(q)$ leaves B unchanged at the chosen gains (207/208), which
+is why B-FK omits it; at 50/30/0.1 ($K_p\cdot\text{lead}=5$\,N\,m) the arm sags (57/208).
+\item \textbf{Damping, a lesson about the metric:} the oscillation moves with $K_d$ (v3 with $K_d=30$
+holds in 278/289 runs, B with $K_d=10$ in 144/296) without changing 1\,cm success, so a first-entry
+test favoured under-damped gains for v3; holding belongs in the selection rule.
+\item \textbf{Seeds:} GRU seeds 1 and 2 reach 207 and 208: not a lucky initialisation.
 \end{itemize}
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{Ablations (validation set, 208 scenes, unless noted)}
+\caption{Ablations (validation set, 208 scenes, unless noted). Below the first two rows: URDF variant}
 \label{tab:ablation}
 \begin{adjustbox}{max width=\columnwidth}\input{tables/ablation.tex}\end{adjustbox}
 \end{table}
 
 \subsection{What did the arm learn?}\label{sec:arm}
 Section~\ref{sec:policy} argued that $M$ can take the shape of an IK map. We test this after freezing
-by replaying the frozen GRU on the logged states of B's 300 fresh runs and comparing $M$, at each of the
-84,534 updates after the latch with $|e|\ge1$\,cm, with the arm's position Jacobian $J$ at that state,
-which the policy never sees. The commanded end-effector motion $JMe$ points at the target (median cosine
-with $e$ 0.992, interquartile range 0.97--1.00) and closes the error at a near-constant rate (median
-$|JMe|/|e|=1.47$\,s$^{-1}$). The same measures on the expert's labels $v$ at validation demonstration
-states give 0.994 and 1.39\,s$^{-1}$. $M$ is close to the pseudo-inverse $J^{+}$ (median matrix cosine
-0.93) and far from the transpose $J^\top$ (0.55): from joint-angle differences alone the network has
-learned a differential-IK map. It differs from the expert in the null space: a median 31\% of B's joint
-motion does not move the end-effector, against 6\% for the expert. This motion is invisible in $e$ and
-does not hurt reaching, but it shows that the clone matches the expert more closely in task space than
-in joint space.
+by replaying B-FK's GRU (with its FK network) on the logged states of its 300 fresh runs and comparing
+$M$, at each of the 78,761 updates after the latch with $|e|\ge1$\,cm, with the arm's position Jacobian
+$J$ from the URDF, which the policy never sees. The commanded end-effector motion $JMe$ points at the
+target (median cosine with $e$ 0.994, interquartile range 0.98--1.00) and closes the error at a
+near-constant rate (median $|JMe|/|e|=1.49$\,s$^{-1}$). The expert's labels give 0.994 and 1.39\,s$^{-1}$. $M$ is close to the pseudo-inverse $J^{+}$
+(median matrix cosine 0.95) and far from the transpose $J^\top$ (0.57): from joint-angle differences
+alone, and without any robot model, the network has learned a differential-IK map. It differs from the
+expert in the null space: a median 17\% of B-FK's joint motion does not move the end-effector, against
+6\% for the expert. The clone matches the expert more closely in task space than in joint space.
 
 \subsection{Robustness and generalisation}
-Fig.~\ref{fig:cond} shows perturbed and out-of-distribution (OOD) scenes; B and the expert see identical
-perturbations.
+Fig.~\ref{fig:cond} shows perturbed and out-of-distribution (OOD) scenes; B-FK and the expert see
+identical perturbations.
 \begin{itemize}
-\item \textbf{Noise, weak actuators, end-effector push:} B scores 59/60 in all four conditions. Its one
-failure is the same scene as without perturbation, so the closed loop absorbs these disturbances.
-\item \textbf{Base push} (20\,N for 0.2\,s): B 56/60 vs expert 38/60 ($p=4\times10^{-5}$). The wheels have
-almost no lateral friction, so the push slides the base about a metre. The expert's state machine does
-not recover before its 25\,s time-out; the GRU re-plans from the current pose every 10\,ms.
-\item \textbf{High targets:} B 40/40 vs expert 15/40. The expert projects targets onto a 0.85\,m reach
-sphere and stops 1.8--5.8\,cm short.
+\item \textbf{Noise, weak actuators, end-effector push:} B-FK scores 58/60 in all four conditions, the
+same two scenes it fails without perturbation, so the closed loop absorbs these disturbances.
+\item \textbf{Base push} (20\,N for 0.2\,s): B-FK 53/60 vs expert 38/60 ($p=0.002$). The push slides the base about a
+metre; the expert's state machine does not recover before its time-out, while the GRU re-plans every 10\,ms.
+\item \textbf{OOD targets expose the learned FK.} Far targets are solved by both (40/40). For high
+targets B-FK reaches 17/40 (expert 15/40; with the analytic FK 40/40), for low targets 3/40 (expert
+30/40, analytic FK 29/40), for wide starts 29/40 (expert 39/40, analytic FK 38/40). At the end of the
+low-target runs the FK network's own error has a median of 4.8\,cm (high: 1.8\,cm), against 0.2\,cm in
+distribution: it is accurate only on arm postures like those it was trained on.
 \end{itemize}
-Both results show that BC copies the demonstrated \emph{behaviour}, not the expert's hard-coded limits,
-which never appear in the data. Low targets ($z<0.1$\,m) remain hard for both controllers (29 vs 30 of
-40) because of joint limits near the floor.
+The base push shows that BC copies the demonstrated \emph{behaviour} and recovers where the expert's
+hard-coded logic does not; the OOD families show the price of replacing a model by data: a learned FK
+does not extrapolate, whereas the analytic FK let the URDF variant beat the expert on high targets.
 
 \begin{figure}[t]
 \centering
@@ -375,9 +386,11 @@ when $<0.05$.}
 \end{figure}
 
 \subsection{Efficiency}
-The policy has 77,726 parameters (616\,KiB) and needs 87\,$\mu$s per 1\,kHz control step, including
-features, a GRU update every tenth step and the PD layer; the expert's IK needs 82\,$\mu$s. Training
-takes 31\,min on a CPU. For data efficiency, Fig.~\ref{fig:lc} shows that with little data the
+B-FK has 346,017 learned parameters, 268,291 of them in the FK network, and needs 342\,$\mu$s per
+1\,kHz control step, including features, the FK network, a GRU update every tenth step and the PD layer,
+well inside the 1\,ms period. With the analytic FK it needs 87\,$\mu$s (expert 82\,$\mu$s), so the FK network is the main run-time
+cost. For data
+efficiency (URDF variant), Fig.~\ref{fig:lc} shows that with little data the
 \emph{base} fails first: at 97 trajectories half the failures never latch, and at 243--486 the base parks
 where the arm cannot reach (median parking offset 10.8 and 8.7\,cm vs 7.5\,cm with all data). At 243 trajectories and above, most
 failures come from the base rather than from the arm velocity field.
@@ -385,33 +398,35 @@ failures come from the base rather than from the arm velocity field.
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{learning_curve.pdf}
-\caption{Learning curve: nested subsets of the training trajectories, evaluated in closed loop on the 208
+\caption{Learning curve (URDF variant B): nested subsets of the training trajectories, evaluated in closed loop on the 208
 validation scenes (shaded: Wilson 95\% CI).}
 \label{fig:lc}
 \end{figure}
 
 \section{Conclusion}
 We asked what a cloned policy must remember. A regressor from the raw inputs to the raw actions fails
-in closed loop despite a good fit. Leaving the expert's stage to a recurrent hidden state
-fails (83/300), because the stage is a discrete, irreversible decision that regression does not commit
-to. A hand-coded latch on single-frame networks recovers most of the performance (272/300), and a
-recurrent policy with an explicit, supervised and latched stop output matches the expert (296 vs 293),
-holds the target as well, and recovers from base pushes that defeat it. Independently, the arm must act
-through a learned velocity field and a PD layer: direct torque regression never succeeds, while the
-learned field turns out to approximate the Jacobian pseudo-inverse. Open-loop loss could not separate the
-designs that work from those that fail; only closed-loop evaluation could. In BC, the
-choice of \emph{what} to remember, \emph{what} to imitate and \emph{how} to act matters more than
-accuracy on recorded data.
+in closed loop despite a good fit. Leaving the expert's stage to a recurrent hidden state fails (86/300),
+because the stage is a discrete, irreversible decision that regression does not commit to. A hand-coded
+latch on single-frame networks recovers much of the performance (239/300), and a recurrent policy with an
+explicit, supervised and latched stop output, with no robot model at run time, comes close to the expert
+(288 vs 293, not significant) and recovers from base pushes that defeat it. The arm must act through a
+learned velocity field and a PD layer: direct torque regression never succeeds, while the learned field
+approximates the Jacobian pseudo-inverse. Open-loop loss could not separate the designs that work from
+those that fail; only closed-loop evaluation could. Replacing the URDF by a learned FK costs eight fresh
+scenes and most of the OOD robustness. In BC, the choice of \emph{what} to remember, \emph{what} to
+imitate and \emph{how} to act matters more than accuracy on recorded data.
 
 \textbf{Limitations.} (i) Training sees only expert states; no DAgger-style aggregation~\cite{ross2011}
-corrects the rare wrong stop decisions. (ii) The PD layer, the park-then-reach structure and the latch are fixed,
-and forward kinematics uses the robot model. (iii) The template's first-entry success test hides poor
+corrects the rare wrong stop decisions. (ii) The PD layer, the park-then-reach structure and the latch are
+fixed. The learned FK limits accuracy to its millimetre-level error and fails on unseen postures (low
+targets 3/40); B-FK reuses gains selected with the URDF variant. (iii) The template's first-entry success test hides poor
 damping, which biased our gain selection. (iv) Robustness and OOD tests use 40--60 scenes and one
 perturbation level; only the GRU seed was varied, while hidden size (128), learning rate and feature set
 were fixed rather than swept. (v) In the memory study L1 also differs in architecture
 from L3, and L2 reuses B's gains rather than its own grid.
 
-\textbf{Improvements.} Aggregate policy roll-outs relabelled with the expert (DAgger); learn a residual
+\textbf{Improvements.} Aggregate policy roll-outs relabelled with the expert (DAgger); train the FK
+network on more varied postures (\eg random joint configurations) to fix extrapolation; learn a residual
 torque on top of the PD layer; select gains and report success with a holding criterion; sweep
 perturbation strength.
 

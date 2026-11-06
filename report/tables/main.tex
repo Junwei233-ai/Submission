@@ -1,18 +1,17 @@
 \begin{tabular}{@{}lccc@{}}
 \toprule
- & \textbf{B (ours)} & v3 & Expert \\
+ & \textbf{B-FK (ours)} & B, URDF FK & Expert \\
 \midrule
-1 cm success / 300 & \textbf{296} & 289 & 293 \\
-\quad rate (\%) & 98.7 & 96.3 & 97.7 \\
-\quad 95\% Wilson CI & 96.6--99.5 & 93.6--97.9 & 95.3--98.9 \\
-Held $<$1 cm for 2 s & 286 & 171 & 286 \\
-Worst err.\ last 1 s, median (mm) & 2.2 & 5.7 & 2.4 \\
-Mean time to success (s) & 9.28 & 9.45 & 9.29 \\
-Compute per 1 kHz step ($\mu$s) & 87 & 82 & 82 \\
-Parameters & 77,726 & 60,186 & -- \\
-Model file (KiB) & 616 & 477 & -- \\
+1 cm success / 300 & \textbf{288} & 296 & 293 \\
+\quad rate (\%) & 96.0 & 98.7 & 97.7 \\
+\quad 95\% Wilson CI & 93.1--97.7 & 96.6--99.5 & 95.3--98.9 \\
+Held $<$1 cm for 2 s & 277 & 286 & 286 \\
+Mean time to success (s) & 9.19 & 9.28 & 9.29 \\
+Compute per 1 kHz step ($\mu$s) & 342 & 87 & 82 \\
+Learned parameters & 346,017 & 77,726 & -- \\
+Robot model in the policy & none & FK, $g(q)$ & FK, IK, $g(q)$ \\
 \midrule
-\multicolumn{4}{@{}l@{}}{Paired exact McNemar (discordant pairs): B vs expert 7/4, $p=0.55$;} \\
-\multicolumn{4}{@{}l@{}}{B vs v3 10/3, $p=0.09$; held $<$1 cm: B vs v3 122/7, $p=3\times10^{-28}$.} \\
+\multicolumn{4}{@{}l@{}}{Exact McNemar (discordant pairs): B-FK vs expert 6/11, $p=0.33$;} \\
+\multicolumn{4}{@{}l@{}}{B-FK vs B 2/10, $p=0.04$. Held: B-FK vs expert 7/16, $p=0.09$.} \\
 \bottomrule
 \end{tabular}

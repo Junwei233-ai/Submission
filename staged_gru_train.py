@@ -29,18 +29,23 @@ import torch
 from torch import nn
 
 from staged_data import stop_index
-from staged_policy import (GRU_FEATURES, GRU_PERIOD, PARK_GRU_FEATURES, GRUPolicy, NumpyMLP, gru_features,
-                           gru_park_features, park_pose)
+from staged_policy import (GRU_FEATURES, GRU_PERIOD, PARK_GRU_FEATURES, GRUPolicy, LearnedFK, NumpyMLP,
+                           gru_features, gru_park_features, park_pose)
 
 LATCH_CANDIDATES = (1, 2, 3, 5, 10, 20)  # GRU updates (10 ms each)
 
 DT = 0.001
 
 
-def sequence(path, half_window, park_net=None):
-    """Features, wheel, arm velocity, stop and arm torque labels at every GRU_PERIOD-th step."""
+def sequence(path, half_window, park_net=None, fk=None):
+    """Features, wheel, arm velocity, stop and arm torque labels at every GRU_PERIOD-th step.
+
+    With fk (a LearnedFK), the end-effector position in the features is the learned model's estimate
+    from the recorded joint angles and base pose, exactly as at run time; the recorded (URDF) ee_pos is
+    then not read."""
     with np.load(path, allow_pickle=False) as data:
-        x, actions, ee = data["inputs"], data["actions"], data["ee_pos"]
+        x, actions = data["inputs"], data["actions"]
+        ee = fk(x[:, 4:11], x[:, :3], x[:, 3]) if fk is not None else data["ee_pos"]
     index = np.arange(0, len(x), GRU_PERIOD)
     lo, hi = np.maximum(index - half_window, 0), np.minimum(index + half_window, len(x) - 1)
     velocity = (x[hi, 4:11] - x[lo, 4:11]) / ((hi - lo)[:, None] * DT)
@@ -96,6 +101,8 @@ def main():
                         help="matrix: v = M @ error tracked by PD; torque: direct joint torques (ablation)")
     parser.add_argument("--features", choices=("bearing", "park"), default="bearing",
                         help="bearing: gru_features; park: gru_park_features with the learned park MLP")
+    parser.add_argument("--fk-model", type=Path,
+                        help="Learned forward kinematics (staged_fk_train.py): features use its EE estimate, not the URDF")
     parser.add_argument("--limit", type=int, help="Smoke test: first N trajectories per split")
     args = parser.parse_args()
     if args.output.exists():
@@ -109,7 +116,8 @@ def main():
         with np.load(args.model_dir / "policy.npz", allow_pickle=False) as data:
             park_arrays = {k: data[k] for k in data.files if k.startswith("park_")}
         park_net = NumpyMLP(park_arrays, "park")
-    raw = {name: [sequence(source / n, args.half_window, park_net) for n in split["splits"][name][:args.limit]]
+    fk = LearnedFK(args.fk_model) if args.fk_model else None
+    raw = {name: [sequence(source / n, args.half_window, park_net, fk) for n in split["splits"][name][:args.limit]]
            for name in ("train", "validation")}
     train_x = np.concatenate([s[0] for s in raw["train"]])
     x_mean, x_scale = train_x.mean(axis=0), train_x.std(axis=0)
@@ -200,6 +208,8 @@ def main():
                     kp=args.kp, kd=args.kd, reference_lead=args.lead,
                     velocity_limit=np.abs(labels).max(axis=0).tolist(), half_window=args.half_window, seed=args.seed,
                     split_sha256=hashlib.sha256((args.model_dir / "split.json").read_bytes()).hexdigest(),
+                    ee_source=("learned forward kinematics, sha256 "
+                               + hashlib.sha256(args.fk_model.read_bytes()).hexdigest()) if args.fk_model else "recorded ee_pos",
                     labels=("recorded wheel commands; arm: "
                             + ("recorded joint torques" if torque else "central-difference joint velocity")
                             + ("; stop: public stop time from recorded wheels (arm loss after it only)"
