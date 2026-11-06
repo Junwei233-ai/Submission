@@ -48,7 +48,7 @@ Fresh held-out test set: 300 new scenes (seed 2026), collected after both models
 
 | Controller | 1 cm success | 95% Wilson CI | Stays within 1 cm for 2 s after success |
 |---|---|---|---|
-| **B-FK (ours, final)** | retraining in progress; numbers go here | | |
+| **B-FK (ours, final)** | test pending; validation 184 / 208 (88.5%) with gains 200/30/0.2 and N = 5 | 83.4–92.1% (validation) | not measured |
 | Earlier version, FK and GRU trained on recorded `ee_pos` | 289 / 300 (96.3%) | 93.6–97.9% | not measured |
 | Variant B (same GRU, URDF FK and gravity term) | 296 / 300 (98.7%) | 96.6–99.5% | 286 |
 | v3 (ours, baseline) | 289 / 300 (96.3%) | 93.6–97.9% | 171 |
@@ -345,8 +345,9 @@ Full details are in [METHOD.md](METHOD.md).
 
 ### 7.1.1 Final method without the robot model (B-FK)
 
-B-FK is being retrained on the forward kinematics above; its results will be added here. The table below is
-the earlier version in `results/final_run/fk_ee_pos/`: B's GRU and gains, a forward-kinematics MLP trained
+B-FK retrained on the forward kinematics above reaches 184/208 on validation (5 cm: 199; base latched: 200),
+in `results/final_run/fk_run/val_L3/`. L1 reaches 167/208 (`val_L1/`). Test results will be added here. The
+table below is the earlier version in `results/final_run/fk_ee_pos/`: B's GRU and gains, a forward-kinematics MLP trained
 on recorded `ee_pos`, and no gravity term.
 
 | | 1 cm success | 95% Wilson CI | 5 cm success | Base latched |
