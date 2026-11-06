@@ -34,8 +34,8 @@ policy contains no robot model: a learned forward-kinematics network supplies th
 and no gravity model is used. On identical data, split and scenes we compare three levels of stage
 memory: four single-frame MLPs with a hand-coded latch, a GRU that must keep the stage in its hidden
 state, and a GRU with an explicit, latched stop output. They reach 239, 86 and 288 of 300 fresh scenes
-(expert: 293). Implicit memory alone fails: in 148 of 300 runs the wheels restart after stopping, while
-its open-loop loss matches the latched policy's. The recurrent policy with an explicit latch is not
+(expert: 293). Implicit memory alone fails: in 148 of 300 runs the wheels restart after stopping, although
+its open-loop loss is close to the latched policy's. The recurrent policy with an explicit latch is not
 significantly worse than the expert ($p=0.33$), recovers from base pushes that defeat it (53/60 vs 38/60)
 and runs in 342\,$\mu$s per 1\,kHz step. Regressing torques directly fails in all 208 validation scenes,
 while a learned velocity field tracked by a PD layer succeeds, and replaying the policy shows that this
@@ -84,7 +84,8 @@ specific information a policy must remember rather than giving it as much histor
 \subsection{Expert data}
 We sample 1500 scenes (target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $\pm0.6$\,m, any
 heading; arm start $\pm0.15$\,rad around the template posture) and run the expert headless at 1\,kHz,
-recording inputs, actions and end-effector position. We keep the 1391 runs that end within 1\,cm (55 stalled, 54 ended at
+recording the 21 inputs, the 11 actions and the end-effector position, which the collector computes by
+forward kinematics of the measured joint angles (the same value the expert uses). We keep the 1391 runs that end within 1\,cm (55 stalled, 54 ended at
 1.000--1.004\,cm): quality over quantity, as failed behaviour stays out of the labels (the fresh test set
 is not filtered). We split them by
 whole trajectory (seed 42) into 973/208/210 for training, validation and a development test set;
@@ -104,7 +105,9 @@ recorded joint angles.
 every recorded wheel command stays zero. It matches the expert's internal ``done'' phase on 1390 of
 1391 demonstrations (checked once; no other code reads the phase).
 \item \textbf{Parking pose:} the recorded base pose at $t_\text{stop}$, one sample per trajectory.
+\item \textbf{Forward kinematics:} recorded end-effector positions, used offline as labels only.
 \end{itemize}
+Everything else the policy uses at run time is computed from the listed measurements and the target.
 
 \subsection{Policy}\label{sec:policy}
 Fig.~\ref{fig:arch} shows the final policy, \emph{B-FK}. Every 10\,ms a GRU~\cite{cho2014} (128 hidden
@@ -153,9 +156,10 @@ by about 0.1\,rad before reaching.
 
 \textbf{Learned forward kinematics.} An MLP ($2\times512$ ReLU, 268,291 parameters) maps the 7 joint
 angles to the end-effector position in the base frame, placed in the world by the measured base pose. Its
-labels are end-effector positions recorded by the simulator in expert runs of the 973 training scenes,
-continued for 2\,s after success to cover converged poses. Its final-frame validation error has a median
-of 2.0\,mm (p95 6.2, max 15.4\,mm); since the arm stops where the \emph{predicted} error is zero, this
+data are new expert runs of the 973 training scenes that continue for 2\,s after success, so converged
+poses are covered; the 967 successful runs give 2.7\,M frames (every 2nd after $t_\text{stop}$, every 20th
+before), with the recorded end-effector positions as labels. On the 208 validation scenes, run the same
+way, its final-frame error has a median of 2.0\,mm (p95 6.2, max 15.4\,mm); since the arm stops where the \emph{predicted} error is zero, this
 bounds the final accuracy. The GRU is trained on $e$ from this network, exactly as at run time.
 
 \textbf{Learned parking pose (variant B) vs.\ a hand-made feature (v3).} The parking pose is not
@@ -172,8 +176,8 @@ $c_k$ and latched after $N$ consecutive positive outputs, so the stage can never
 whether this explicit memory is needed, we compare three policies (Section~\ref{sec:memory}):
 \begin{itemize}
 \item \textbf{L1, latch only:} our first design, four single-frame MLPs (parking pose; wheels and stop
-from the base's offset to the parking pose; arm $v$ from $e$ and $q$, same PD layer). The only memory is
-a hand-coded latch on the stop classifier.
+from the base's offset to the parking pose, which do not use $e$; arm $v$ from $e$ and $q$, retrained on
+the learned FK, same PD layer). The only memory is a hand-coded latch on the stop classifier.
 \item \textbf{L2, hidden state only:} B-FK without the stop output; the stage must live in the hidden
 state and the arm is never gated (``done'' for evaluation: all wheel commands below 0.05\,rad/s).
 \item \textbf{L3, hidden state + latch:} B-FK, our method.
@@ -200,7 +204,7 @@ shared CPU (best epoch 78 of 80); the FK MLP (MSE, Adam with a cosine schedule, 
 The run-time forward pass is NumPy and matches PyTorch to $10^{-5}$.
 
 \textbf{Hyperparameters chosen on validation.} The latch length $N$ is chosen open-loop on validation
-sequences (smallest mean offset to $t_\text{stop}$; $N=1$ for B). The gains $(K_p,K_d,\text{lead})$ do not
+sequences (smallest mean offset to $t_\text{stop}$; $N=1$ for B and B-FK). The gains $(K_p,K_d,\text{lead})$ do not
 enter the loss and success is not differentiable through the simulator, so we grid-search
 $\{50,100,200\}\times\{10,30\}\times\{0.1,0.2\}$ in closed loop on the 208 validation scenes with a rule
 fixed beforehand (most successes, then shortest time, then fewest clipped steps). With 12 points and a
@@ -217,7 +221,8 @@ retrain, choose gains on validation, check that development numbers reproduce (w
 This froze the URDF variant B; to remove the robot model we then trained the FK MLP, retrained the GRUs
 on its estimate with unchanged settings, and evaluated B-FK once. Runs are deterministic on one machine
 (across platforms 1--3 borderline scenes can flip). All controllers run on identical scenes, compared
-with the exact McNemar test; intervals are Wilson 95\%.
+with the exact McNemar test; intervals are Wilson 95\%. Every number, table and figure in this report is
+generated by scripts from per-scene results versioned in our repository (README).
 
 \subsection{What must the policy remember?}\label{sec:memory}
 Table~\ref{tab:memory} compares L0 and the three levels on the 208 validation and 300 fresh scenes.
@@ -281,7 +286,7 @@ how fast to approach) can stay in a recurrent state.
 
 \begin{table}[t]
 \centering\footnotesize
-\caption{What must the policy remember? Same data, split and scenes for all three levels}
+\caption{What must the policy remember? Same data, split and scenes; L1--L3 use the learned FK and gains 200/30/0.2}
 \label{tab:memory}
 \begin{adjustbox}{max width=\columnwidth}\input{tables/memory.tex}\end{adjustbox}
 \end{table}
@@ -334,10 +339,8 @@ in 207 of these runs, so the failure lies entirely in how the arm acts.
 fresh test ($p=0.09$). Learning the pose is at least as good as copying the expert's formula.
 \item \textbf{Gravity model:} removing $g(q)$ leaves B unchanged at the chosen gains (207/208), which
 is why B-FK omits it; at 50/30/0.1 ($K_p\cdot\text{lead}=5$\,N\,m) the arm sags (57/208).
-\item \textbf{Damping, a lesson about the metric:} the oscillation moves with $K_d$ (v3 with $K_d=30$
-holds in 278/289 runs, B with $K_d=10$ in 144/296) without changing 1\,cm success, so a first-entry
-test favoured under-damped gains for v3; holding belongs in the selection rule.
-\item \textbf{Seeds:} GRU seeds 1 and 2 reach 207 and 208: not a lucky initialisation.
+\item \textbf{Damping and seeds} (table): the hold-test oscillation moves with $K_d$, invisible to 1\,cm
+success; GRU seeds 1 and 2 reach 207 and 208.
 \end{itemize}
 
 \begin{table}[t]
@@ -423,7 +426,7 @@ targets 3/40); B-FK reuses gains selected with the URDF variant. (iii) The templ
 damping, which biased our gain selection. (iv) Robustness and OOD tests use 40--60 scenes and one
 perturbation level; only the GRU seed was varied, while hidden size (128), learning rate and feature set
 were fixed rather than swept. (v) In the memory study L1 also differs in architecture
-from L3, and L2 reuses B's gains rather than its own grid.
+from L3, and L1 and L2 reuse B's gains rather than their own grid.
 
 \textbf{Improvements.} Aggregate policy roll-outs relabelled with the expert (DAgger); train the FK
 network on more varied postures (\eg random joint configurations) to fix extrapolation; learn a residual

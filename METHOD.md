@@ -114,7 +114,8 @@ x_k (18) ─▶ GRU (hidden 128) ─▶ h_k ─▶ Linear(128 → 26)
 - 60,186 parameters: GRU 56,832, output layer 3,354.
 - **What must be remembered (memory study, README Section 7.9).** A single frame cannot tell "almost
   there, slowing down" from "already parked": the expert's stage is not observed. Three levels on the
-  same data and scenes (validation /208, fresh /300):
+  same data and scenes (validation /208, fresh /300), URDF variant below; with the learned FK (B-FK,
+  README Section 7.1.1) L1 168 / 239, L2 43 / 86, L3 200 / 288, the same ordering:
   - L1, four single-frame MLPs with a hand-coded latch: 189 / 272;
   - L2, this GRU without the stop output (stage only in the hidden state): 54 / 83. The wheels restart
     after stopping in 188 of 300 fresh runs, and the ungated arm drifts a median 0.31 rad while driving;
