@@ -313,9 +313,10 @@ key to stop; the target marker, status text and camera placement are ours.
 All other `.py` and `.sh` files in the repository root are written from scratch by us.
 
 **Moodle copy.** The Moodle zip contains everything in this repository except the template's robot
-models (`robotnik_arm_task/models/`, about 175 MB), which come unchanged with the course's RoboEnv template:
-copy that folder from the template, or clone the full repository from
-https://github.com/Junwei233-ai/Submission. Data (the expert collection and per-step roll-outs) are not
+models (`robotnik_arm_task/models/`, about 175 MB), which come unchanged with the course's RoboEnv template. In the
+template that folder is a link to the installed package's models, so either link it the same way
+(`ln -s $(python -c "import site; print(site.getsitepackages()[0])")/models robotnik_arm_task/models`),
+copy the real folder (`cp -rL`), or clone the full repository from https://github.com/Junwei233-ai/Submission. Data (the expert collection and per-step roll-outs) are not
 included; the frozen weights (about 7 MB) are, so the Quick start runs without training.
 
 ## 5. Data
