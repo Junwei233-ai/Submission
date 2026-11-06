@@ -81,9 +81,9 @@ specific information a policy must remember rather than giving it as much histor
 \subsection{Expert data}
 We sample 1500 scenes (target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $\pm0.6$\,m, any
 heading; arm start $\pm0.15$\,rad around the template posture) and run the expert headless at 1\,kHz,
-recording inputs, actions and end-effector position. We keep the 1391 successful runs: the other 109
-stalled, hit the step limit or ended more than 1\,cm away, and cloning them would teach the policy to stop
-short, so here quality matters more than quantity (the fresh test set is not filtered,
+recording inputs, actions and end-effector position. We keep the 1391 successful runs: of the other 109, 55
+stalled and 54 stopped more than 1\,cm from the target, and cloning them would teach the policy to stall
+or stop short, so here quality matters more than quantity (the fresh test set is not filtered,
 Section~\ref{sec:protocol}). We split them by
 whole trajectory (seed 42) into 973/208/210 for training, validation and a development test set;
 splitting by frame would leak near-identical neighbouring frames. Normalisation uses training data only.
@@ -137,7 +137,7 @@ The PD layer runs at 1\,kHz.}
 
 \textbf{Velocity field $v=Me$.} The arm's desired joint velocity is $v=Me$. This guarantees $v=0$ at
 $e=0$, so the arm stops at the target, and $M$ has the shape of a damped least-squares IK map
-$J^\top(JJ^\top+\lambda^2I)^{-1}$ that the network learns without a Jacobian. Because $e$ is recomputed
+$J^\top(JJ^\top+\lambda^2I)^{-1}$ that the network learns without a Jacobian (tested in Section~\ref{sec:arm}). Because $e$ is recomputed
 every 1\,ms from the current state, a model error changes the \emph{direction} of approach but not the
 fixed point: the loop corrects its own mistakes instead of compounding them. A reference
 $q_\text{ref}\leftarrow\text{clip}(q_\text{ref}+v\,dt,\;q\pm\text{lead})$ is tracked by
@@ -232,7 +232,8 @@ compound as BC theory predicts~\cite{ross2011}. Fig.~\ref{fig:memtrace} shows on
 command dips below the threshold at 10.6\,s, while the error is still 2\,cm, then rises again; the base
 creeps away and the error grows to a metre. L1 and L3 stop the wheels at once and reach the target.
 
-\textbf{Offline loss cannot see this.} L2's validation wheel loss (0.062) lies inside the spread of B's
+\textbf{Offline loss cannot see this.} L0 already showed that a good fit does not imply success; L2
+makes the point sharper, because it shares B's architecture, inputs and loss. Its validation wheel loss (0.062) lies inside the spread of B's
 three seeds (0.054--0.067), yet L2 succeeds in 54 of 208 validation scenes and B in 207--208
 (Fig.~\ref{fig:fit}). Within one design the loss does rank models: along B's learning curve lower loss
 goes with higher success. It cannot compare designs that differ in what they remember, plausibly because the
