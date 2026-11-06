@@ -380,6 +380,11 @@ bit-identical results), while across platforms 1–3 borderline scenes can flip.
 - **GRU trained on URDF e, run with the learned FK** (the earlier B-FK, `fk_run/urdf_trained_gru/`):
   198/208 and 288/300 on this machine (289/300 on a team member's machine). Retraining on the learned e
   makes training and run time consistent without changing the fresh-test result.
+- **FK labels without any recorded end-effector position** (alternative explored by the team, commit
+  `2d6a0ee`): training the FK only on converged expert poses, with the target as label (967 samples), avoids
+  the recorded `ee_pos` entirely but is less accurate (final-pose error median 2.5 mm, p95 7.6 mm) and gave
+  184/208 on validation with retrained L3, against 200/208 here. We submit the `ee_pos`-label version; its
+  labels are the simulator's end-effector positions, used offline only.
 - **What the arm learned** (`analyze_arm_matrix.py --gru-model fk_run/gru_B_fk/gru.npz --fk-model
   fk_run/fk.npz`, `fk_run/arm_matrix.json`): cos(J M e, e) median 0.994; rate 1.49 /s; null-space share
   17%; matrix cosine with J⁺ 0.95, with Jᵀ 0.57.
