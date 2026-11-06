@@ -40,6 +40,8 @@ the end-effector error, and turns green on success. Press `q` to skip a scene. T
 each scene, the outcome, time, final error and `expert module loaded: False` (the learned policy never
 imports the expert's code). `--speed 2` plays twice as fast. Other scene sets: `--set robustness` (with
 e.g. `--perturb "--push-base 20"`), `--set high_target`, `far_target`, `low_target`, `wide_start`.
+Outputs: the terminal summary, and per scene `result.json` (outcome, errors, timing) and `rollout.npz`
+(logged inputs, actions, errors) in a temporary folder, or in `--output DIR`.
 Running the 300 bundled fresh scenes reproduces the frozen evaluation scene by scene on the same platform;
 on another platform floating-point differences can flip 1–3 borderline scenes (e.g. 288 vs 289).
 
@@ -194,8 +196,18 @@ PY=/path/to/RoboEnv/python bash run_fk_pipeline.sh artifacts/fk_run 8
 It collects the demonstrations, trains the parking MLP, runs the expert with a 2 s hold, trains the
 forward-kinematics MLP, trains GRU-B on the MLP's end-effector estimate (`staged_gru_train.py --fk-model`),
 and evaluates on validation and the fresh test. The gains are fixed at
-200/30/0.2 and are not searched, so this step needs no grid. Results go to `artifacts/fk_run/`. The gains
-can be rerun with `staged_arm_grid.py` (Section 3.2).
+200/30/0.2 and are not searched, so this step needs no grid. The gains can be rerun with
+`staged_arm_grid.py` (Section 3.2). It prints the validation and fresh-test success at the end.
+
+| Output in `artifacts/fk_run/` | Content |
+|---|---|
+| `collection/*.npz`, `collection/summary.csv` | Expert demonstrations (one trajectory per scene) and their outcomes |
+| `base/split.json`, `base/policy.npz` | Train/validation/test split; parking MLP (and L1's wheel and stop MLPs) |
+| `hold_train/`, `hold_validation/` | Expert runs continued 2 s after success (data of the forward-kinematics MLP) |
+| `fk/fk.npz`, `fk/fk.json` | Forward-kinematics MLP and its accuracy |
+| `gru_B_fk/gru.npz`, `gru_B_fk/gru.json` | B-FK's GRU and its training record (losses, latch length) |
+| `validation/`, `fresh_test/` | `metrics.json` (success, Wilson CI), `results.json` and `rollouts/<scene>/` per scene |
+| `torque_limit.json` (repository root) | Run-time arm torque limit from the training demonstrations |
 
 ### 3.1.1 Full study with the URDF variant
 
@@ -290,6 +302,7 @@ All learned levels use gains 200/30/0.2 and no gravity term, so they share one a
 | RoboEnv `simulation_and_control` | PyBullet interface (`SimInterface`, `PinWrapper`, `MotorCommands`) | No |
 | pinocchio | B-FK: scoring and recording the end-effector position only. Variant B, v3, L1 and L2 in Section 7.9: also forward kinematics and gravity term g(q) at run time | Called directly |
 | PyTorch | Training | Called directly |
+| NumPy, matplotlib | Run-time policy and analysis (NumPy); report figures (matplotlib) | Called directly |
 
 The simulation settings in `staged_rollout.py` (ground friction, wheel contact, motor gains, finger
 angles) are copied from `robotnik_arm_collect.py`, so evaluation matches collection. The expert's
@@ -297,7 +310,13 @@ parking-pose rule (standoff from the target) is only used when the **expert** ba
 option (used by `demo.py`) follows the template's GUI mode: `use_gui=True`, real-time pacing and the `q`
 key to stop; the target marker, status text and camera placement are ours.
 
-All other `.py` files in the repository root are written from scratch by us.
+All other `.py` and `.sh` files in the repository root are written from scratch by us.
+
+**Moodle copy.** The Moodle zip contains everything in this repository except the template's robot
+models (`robotnik_arm_task/models/`, about 175 MB), which come unchanged with the course's RoboEnv template:
+copy that folder from the template, or clone the full repository from
+https://github.com/Junwei233-ai/Submission. Data (the expert collection and per-step roll-outs) are not
+included; the frozen weights (about 7 MB) are, so the Quick start runs without training.
 
 ## 5. Data
 
