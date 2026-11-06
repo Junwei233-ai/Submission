@@ -98,7 +98,7 @@ def fig_conditions(suite, out):
     ax.axhline(y[4] - 0.5, color=MUTED, lw=0.6)
     ax.grid(axis="y", visible=False)
     ax.legend(loc="lower left", frameon=False, ncol=2, bbox_to_anchor=(0, 1.0))
-    fig.savefig(out / "conditions.pdf")
+    fig.savefig(out / "conditions.pdf", metadata={"CreationDate": None})
     plt.close(fig)
 
 
@@ -131,7 +131,7 @@ def fig_learning_curve(an, out):
     a2.set_ylabel("validation loss")
     a2.legend(frameon=False, handlelength=2.0, ncol=3, loc="lower left", bbox_to_anchor=(-0.05, 1.0),
                columnspacing=0.8)
-    fig.savefig(out / "learning_curve.pdf")
+    fig.savefig(out / "learning_curve.pdf", metadata={"CreationDate": None})
     plt.close(fig)
 
 
@@ -172,7 +172,7 @@ def fig_hold(trace, out):
     ax.set_xlabel("time relative to each controller's first 1 cm success (s)")
     ax.set_ylabel("EE error (mm)")
     ax.legend(frameon=False, ncol=3, loc="lower left", bbox_to_anchor=(0, 1.0))
-    fig.savefig(out / "hold_trace.pdf")
+    fig.savefig(out / "hold_trace.pdf", metadata={"CreationDate": None})
     plt.close(fig)
 
 
@@ -226,7 +226,7 @@ def fig_memory_trace(trace, out):
     a2.set_xlim(0, 40)
     a2.set_ylabel("EE error (m)")
     a2.set_xlabel(f"time (s), fresh scene {MEMORY_SCENE.replace('scene_', '')}; dot: 1 cm success")
-    fig.savefig(out / "memory_trace.pdf")
+    fig.savefig(out / "memory_trace.pdf", metadata={"CreationDate": None})
     plt.close(fig)
 
 
@@ -267,7 +267,7 @@ def fig_fit_vs_success(an, mem, fk, results, out):
     ax.set_xlabel("open-loop validation wheel loss (normalised MSE)", labelpad=2)
     fig.subplots_adjust(right=0.97)
     ax.set_ylabel("val. success (%)")
-    fig.savefig(out / "fit_vs_success.pdf")
+    fig.savefig(out / "fit_vs_success.pdf", metadata={"CreationDate": None})
     plt.close(fig)
 
 

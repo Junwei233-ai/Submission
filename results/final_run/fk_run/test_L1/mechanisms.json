@@ -1,0 +1,8 @@
+{
+  "never_done": 13,
+  "restarts": 0,
+  "arm_drift_rad_median": 0.09844526199287817,
+  "arm_drift_rad_p90": 0.10783264381375415,
+  "creep_m_median": 0.007337737351470492,
+  "creep_m_p90": 0.06636015616560258
+}

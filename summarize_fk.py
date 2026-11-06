@@ -78,9 +78,14 @@ def main():
             name = f"{prefix}_{lvl}"
             if name in run:
                 r = row(run[name], None if lvl == "L3" else run[f"{prefix}_L3"])
-                folder = args.rollouts / name
+                # Mechanisms need the per-step roll-outs (artifacts/, not versioned). They are computed when
+                # the roll-outs exist and stored next to the run, so a clean clone reproduces the summary.
+                folder, stored = args.rollouts / name, f / name / "mechanisms.json"
                 if (folder / "rollouts").is_dir():
                     r["mechanisms"] = mechanisms(folder, sorted(run[name]))
+                    stored.write_text(json.dumps(r["mechanisms"], indent=2) + "\n")
+                elif stored.exists():
+                    r["mechanisms"] = json.loads(stored.read_text())
                 out["memory"][f"{split}_{lvl}"] = r
     # Robustness and out-of-distribution, paired against the expert on identical scenes and perturbations.
     for key, names in (("robustness", CONDITIONS), ("ood", FAMILIES)):
