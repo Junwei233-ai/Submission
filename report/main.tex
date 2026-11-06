@@ -81,9 +81,10 @@ specific information a policy must remember rather than giving it as much histor
 \subsection{Expert data}
 We sample 1500 scenes (target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $\pm0.6$\,m, any
 heading; arm start $\pm0.15$\,rad around the template posture) and run the expert headless at 1\,kHz,
-recording inputs, actions and end-effector position. We keep the 1391 successful runs: of the other 109, 55
-stalled and 54 stopped more than 1\,cm from the target, and cloning them would teach the policy to stall
-or stop short, so here quality matters more than quantity (the fresh test set is not filtered,
+recording inputs, actions and end-effector position. We keep the 1391 runs that end within 1\,cm. Of the other 109, 55
+stalled (48 of them more than 1\,cm away) and 54 ended just above 1\,cm (at most 1.004\,cm, all low
+targets). Dropping stalls keeps failed behaviour out of the labels; the strict 1\,cm rule costs a few
+low-target demonstrations, a trade of quantity for quality (the fresh test set is not filtered,
 Section~\ref{sec:protocol}). We split them by
 whole trajectory (seed 42) into 973/208/210 for training, validation and a development test set;
 splitting by frame would leak near-identical neighbouring frames. Normalisation uses training data only.

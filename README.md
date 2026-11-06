@@ -292,7 +292,7 @@ Full details are in [METHOD.md](METHOD.md).
 
 ### 7.2 Accuracy: fresh test set (300 scenes)
 
-| | 1 cm success | Expert succeeded (286 scenes) | Expert failed (14 scenes) |
+| | 1 cm success | Expert succeeded during collection (286 scenes) | Expert failed during collection (14 scenes) |
 |---|---|---|---|
 | **B** | 296 (98.7%, CI 96.6–99.5) | 282 | 14 |
 | v3 | 289 (96.3%, CI 93.6–97.9) | 277 | 12 |
@@ -480,10 +480,11 @@ instead, which reproduce the same ordering (L1 189, L2 54, torque 0 vs 195, 88, 
 
 Notes on the template's success test:
 - `check_stop` tests "stalled" before "reached". An arm that reaches the target and stops before 8 s
-  is reported as unreachable at t = 8 s. This happened in 9 recorded scenes, all with final errors
-  below 4 mm. Our evaluator therefore uses only the reach condition.
+  is reported as unreachable at t = 8 s. In the final collection this happened in 7 scenes, all with
+  final errors below 3.1 mm. Our evaluator therefore uses only the reach condition.
 - Our collector's `success` label is stricter than the template: it also requires the final error to
-  be below 1 cm. This excluded 51 template-successful demonstrations, all with low targets.
+  be below 1 cm. In the final collection this excluded 54 template-successful runs, all with low targets
+  (z ≤ 0.25 m) and final errors of 1.000–1.004 cm. With the 55 stalled runs, 109 of 1500 were dropped.
 
 ## 9. Limitations
 
@@ -498,6 +499,7 @@ Notes on the template's success test:
 - Success follows the template, which only checks the first entry into 1 cm. Our gain selection rule
   should include holding (Section 7.7).
 - Robustness and out-of-distribution tests use 40–60 scenes per condition and one perturbation level.
-- Only the GRU seed was varied; there is one parking MLP. Variant B reached its best epoch at 78 of a
+- Only the GRU seed was varied; hidden size (128), learning rate and the feature set were fixed, not
+  swept. There is one parking MLP. Variant B reached its best epoch at 78 of a
   maximum of 80.
 - The GRU runs at a fixed 100 Hz; another control rate needs retraining.

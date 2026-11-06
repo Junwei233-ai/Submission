@@ -36,10 +36,10 @@ SETS = {"fresh": "fresh_test", "robustness": "robustness_60", "far_target": "ood
         "high_target": "ood/high_target", "low_target": "ood/low_target", "wide_start": "ood/wide_start"}
 # Reported 1 cm successes (README Section 7) for the unperturbed sets, to compare against.
 REPORTED = {("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
-            ("B", "far_target"): "37/40", ("expert", "far_target"): "37/40",
+            ("B", "far_target"): "40/40", ("expert", "far_target"): "40/40",
             ("B", "high_target"): "40/40", ("expert", "high_target"): "15/40",
             ("B", "low_target"): "29/40", ("expert", "low_target"): "30/40",
-            ("B", "wide_start"): "40/40", ("expert", "wide_start"): "40/40"}
+            ("B", "wide_start"): "38/40", ("expert", "wide_start"): "39/40"}
 
 
 def controller_args(name):

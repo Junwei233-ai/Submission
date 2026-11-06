@@ -41,7 +41,8 @@ The expert from the template runs each scene in PyBullet. Every 1 ms we record:
 - `ee_pos`: end-effector position, from forward kinematics of the measured state.
 
 The collector also stores the expert's internal `phase` and `time`. **The learner never reads them.**
-Only the expert's successful runs are kept as demonstrations (1391 of 1500).
+Only the expert's successful runs, ending within 1 cm, are kept as demonstrations (1391 of 1500): 55
+runs stalled, and 54 ended at 1.000–1.004 cm (all low targets).
 
 ## 2. Split (`staged_data.split_paths`)
 
@@ -122,7 +123,9 @@ x_k (18) ─▶ GRU (hidden 128) ─▶ h_k ─▶ Linear(128 → 26)
 - **Why M·e and not torques.** The arm's desired velocity is v = M·e.
   - v = 0 whenever e = 0, so the arm stops at the target without drift.
   - M has the shape of a damped least-squares inverse kinematics map J^T(JJ^T + λ²I)^{-1}, learned
-    from data without a Jacobian.
+    from data without a Jacobian. Checked after freezing (`analyze_arm_matrix.py`, README Section 7.10):
+    the learned M has median matrix cosine 0.93 with the pseudo-inverse J⁺ (0.55 with Jᵀ), and J·M·e
+    points at the target (median cosine 0.992).
   - Torques mix gravity and dynamics. The same GRU with its arm head regressing torques directly
     (no PD layer) reaches 0/208 on validation.
 
@@ -232,6 +235,9 @@ See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summ
 - **Out of distribution:** higher targets B 40/40, expert 15/40; the other families are similar for
   both.
 - **Seeds 42 / 1 / 2:** 207 / 207 / 208 on validation.
+- **Memory study** (Section 5): L0 0/300, L1 272/300, L2 83/300, B 296/300 on the fresh test. L2's
+  validation wheel loss (0.062) is inside B's seed spread (0.054–0.067), so open-loop loss does not
+  predict closed-loop success.
 - **Learning curve** with 10 / 25 / 50 / 100% of the training trajectories: 157 / 193 / 195 / 207.
 - **Holding for 2 s after success:** B 286/296, expert 286/293, v3 171/289. v3's oscillation comes
   from its gains (Kd = 10), not from its policy.
