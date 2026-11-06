@@ -96,7 +96,7 @@ scene) of the fresh test set (300), its robustness subset (60) and the four out-
 | `robotnik_arm_control.py` | Template, **unmodified** | Expert controllers (`base_controller`, `arm_controller`) and `check_stop` |
 | `robotnik_arm_collect.py` | **Our modified copy** of `robotnik_arm_task.py` | Headless single-scene collector (changes in Section 4) |
 | `configs/`, `models/` | Template (RoboEnv) | Robot configuration, URDF and meshes |
-| `README.md` | Template | Template instructions |
+| `README.md` | Template, **unmodified** | Template instructions (our collector is documented in Section 4) |
 
 ### 1.3 Report: `report/`
 
