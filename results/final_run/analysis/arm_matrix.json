@@ -1,0 +1,65 @@
+{
+  "B": {
+    "samples": 84534,
+    "alignment": {
+      "p5": 0.3784,
+      "p25": 0.968,
+      "median": 0.9922,
+      "p75": 0.9974,
+      "p95": 0.9996
+    },
+    "task_gain_per_s": {
+      "p5": 0.3163,
+      "p25": 0.8415,
+      "median": 1.4729,
+      "p75": 1.6359,
+      "p95": 1.8122
+    },
+    "null_share": {
+      "p5": 0.0315,
+      "p25": 0.0729,
+      "median": 0.3084,
+      "p75": 0.5037,
+      "p95": 0.9198
+    },
+    "cos_M_pinv": {
+      "p5": 0.1793,
+      "p25": 0.763,
+      "median": 0.9263,
+      "p75": 0.9874,
+      "p95": 0.9944
+    },
+    "cos_M_transpose": {
+      "p5": 0.111,
+      "p25": 0.4187,
+      "median": 0.5547,
+      "p75": 0.6541,
+      "p95": 0.7023
+    }
+  },
+  "expert": {
+    "samples": 52939,
+    "alignment": {
+      "p5": 0.8462,
+      "p25": 0.9745,
+      "median": 0.9939,
+      "p75": 0.9986,
+      "p95": 0.9999
+    },
+    "task_gain_per_s": {
+      "p5": 0.5208,
+      "p25": 1.1297,
+      "median": 1.3861,
+      "p75": 1.578,
+      "p95": 1.857
+    },
+    "null_share": {
+      "p5": 0.0041,
+      "p25": 0.0147,
+      "median": 0.0614,
+      "p75": 0.485,
+      "p95": 0.9439
+    }
+  },
+  "note": "B: frozen GRU replayed on its fresh-test roll-outs, post-latch updates with |e| >= 1 cm; expert: public velocity labels on validation demonstrations after the stop time"
+}

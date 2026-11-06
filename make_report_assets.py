@@ -2,8 +2,9 @@
 
 Every number in report/tables/*.tex and report/figures/*.pdf is read from results/final_run/
 (suite/summary.json, analysis/summary.json, memory/summary.json, grid_*/grid.json, gru_*/gru.json), so the report cannot
-drift from the code. The hold-trace figure needs per-step errors; they are extracted once from a full
-run (--artifacts) into results/final_run/analysis/hold_trace.csv, which is versioned.
+drift from the code. The hold-trace and memory-trace figures need per-step signals; they are extracted once
+from a full run (--artifacts) into results/final_run/analysis/hold_trace.csv and
+results/final_run/memory/trace_<scene>.csv, which are versioned.
 
 Usage: python make_report_assets.py [--results results/final_run] [--artifacts artifacts/final_run]
 """
@@ -25,6 +26,11 @@ STYLE = {"B": dict(color="#2a78d6", marker="o", label="B (ours)"),
 INK, MUTED, GRID = "#1f2328", "#5b6470", "#e3e6ea"
 COL_W = 3.5  # IEEE single column, inches
 TRACE_SCENE = "scene_2026_0008"
+MEMORY_SCENE = "scene_2026_0012"  # fresh scene where L0 and L2 fail and L1 and L3 succeed (typical of Table II)
+LEVEL_STYLE = {"L0": dict(color="#8a929c", label="L0 plain MLP", lw=0.6, zorder=1),
+               "L1": dict(color="#1baf7a", label="L1 latch only", lw=1.2, zorder=3),
+               "L2": dict(color="#eb6834", label="L2 hidden state only", lw=1.2, zorder=2),
+               "L3": dict(color="#2a78d6", label="L3 = B", lw=1.4, zorder=4)}
 
 plt.rcParams.update({
     "font.family": "serif", "font.size": 8, "axes.titlesize": 8, "axes.labelsize": 8,
@@ -156,6 +162,94 @@ def fig_hold(trace, out):
     plt.close(fig)
 
 
+def memory_trace(results, artifacts):
+    """Per-level wheel command and EE error in MEMORY_SCENE (fresh set), every 10 ms; extracted once."""
+    path = results / "memory" / f"trace_{MEMORY_SCENE}.csv"
+    if artifacts and (artifacts / "memory").is_dir():
+        folders = {"L0": artifacts / "direct" / "fresh_mlp", "L1": artifacts / "memory" / "fresh_fournet",
+                   "L2": artifacts / "memory" / "fresh_gru_nostop", "L3": artifacts / "suite" / "fresh_B"}
+        with path.open("w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["level", "t_s", "max_abs_wheel_cmd", "ee_error_m", "done", "success_1cm"])
+            for lvl, folder in folders.items():
+                d = np.load(folder / "rollouts" / MEMORY_SCENE / "rollout.npz")
+                ok = json.loads((folder / "rollouts" / MEMORY_SCENE / "result.json").read_text())["success_1cm"]
+                wheel = np.abs(d["actions"][:, :4]).max(axis=1)
+                for k in range(0, len(wheel), 10):
+                    w.writerow([lvl, f"{k / 1000:.2f}", f"{wheel[k]:.5f}", f"{d['ee_error'][k]:.6f}",
+                                int(d["done"][k]), int(ok)])
+    with path.open() as f:
+        rows = list(csv.DictReader(f))
+    out = {}
+    for lvl in LEVEL_STYLE:
+        r = [x for x in rows if x["level"] == lvl]
+        out[lvl] = dict(t=np.array([float(x["t_s"]) for x in r]), wheel=np.array([float(x["max_abs_wheel_cmd"]) for x in r]),
+                        error=np.array([float(x["ee_error_m"]) for x in r]), success=r[0]["success_1cm"] == "1")
+    return out
+
+
+def fig_memory_trace(trace, out):
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(COL_W, 2.35), sharex=True, gridspec_kw=dict(hspace=0.12))
+    for lvl, st in LEVEL_STYLE.items():
+        d = trace[lvl]
+        kw = dict(color=st["color"], lw=st["lw"], zorder=st["zorder"])
+        a1.plot(d["t"], d["wheel"], **kw, label=st["label"])
+        a2.plot(d["t"], np.maximum(d["error"], 1e-4), **kw)
+        if d["success"]:
+            a2.plot(d["t"][-1], d["error"][-1], marker="o", ms=4, color=st["color"], markeredgecolor="white",
+                    markeredgewidth=0.6, zorder=5)
+    a1.axhline(0.05, color=MUTED, lw=0.7, ls="--")
+    a1.text(39.5, 0.12, "0.05 rad/s", ha="right", fontsize=6.5, color=MUTED)
+    a1.set_yscale("symlog", linthresh=0.05)
+    a1.set_ylim(0, 4)
+    a1.set_yticks([0, 0.05, 0.5, 3], ["0", "0.05", "0.5", "3"])
+    a1.set_ylabel("max |wheel cmd|\n(rad/s)")
+    a1.legend(frameon=False, ncol=2, loc="lower left", bbox_to_anchor=(0, 1.0), columnspacing=1.0)
+    a2.axhline(0.01, color=MUTED, lw=0.7, ls="--")
+    a2.text(39.5, 0.0045, "1 cm", ha="right", fontsize=6.5, color=MUTED)
+    a2.set_yscale("log")
+    a2.set_ylim(1e-3, 1e2)
+    a2.set_xlim(0, 40)
+    a2.set_ylabel("EE error (m)")
+    a2.set_xlabel(f"time (s), fresh scene {MEMORY_SCENE.replace('scene_', '')}; dot: 1 cm success")
+    fig.savefig(out / "memory_trace.pdf")
+    plt.close(fig)
+
+
+def fig_fit_vs_success(an, mem, results, out):
+    """Open-loop validation wheel loss (same definition for every GRU) vs closed-loop validation success."""
+    fig, ax = plt.subplots(figsize=(COL_W, 1.6))
+    pts = []  # (loss, success, label, colour, marker)
+    for frac, r in an["learning_curve"].items():
+        if float(frac) < 1:
+            pts.append((r["validation_wheel_loss"], r["success"], f"B, {r['train_trajectories']} traj.", STYLE["B"]["color"], "o"))
+    offsets = {"B, 486 traj.": (0, -11), "L2 (no stop head)": (6, -3)}
+    for seed, r in an["seeds"].items():
+        pts.append((r["validation_wheel_loss"], r["success"], None, STYLE["B"]["color"], "o"))
+    l2 = json.loads((results / "memory" / "gru_nostop" / "gru.json").read_text())["metrics"]
+    pts.append((l2["validation_wheel_loss"], mem["validation"]["L2"]["success"], "L2 (no stop head)",
+                LEVEL_STYLE["L2"]["color"], "s"))
+    for x, y, lab, c, m in pts:
+        ax.plot(x, 100 * y / 208, marker=m, ms=4.5, color=c, ls="none", markeredgecolor="white", markeredgewidth=0.6)
+        if lab:
+            dx, dy = offsets.get(lab, (6, -3))
+            ax.annotate(lab, (x, 100 * y / 208), textcoords="offset points", xytext=(dx, dy), fontsize=6.5, color=INK,
+                        ha="center" if dx == 0 else "left")
+    seeds = [r["validation_wheel_loss"] for r in an["seeds"].values()]
+    ax.annotate("B, 973 traj., 3 seeds", (max(seeds), 100 * 207 / 208), textcoords="offset points", xytext=(6, -3),
+                fontsize=6.5, color=INK)
+    ax.set_xscale("log")
+    ax.set_xticks([0.05, 0.1, 0.2, 0.3], ["0.05", "0.1", "0.2", "0.3"])
+    ax.minorticks_off()
+    ax.set_xlim(0.045, 0.6)
+    ax.set_ylim(15, 108)
+    ax.set_xlabel("open-loop validation wheel loss (normalised MSE)", labelpad=2)
+    fig.subplots_adjust(right=0.97)
+    ax.set_ylabel("val. success (%)")
+    fig.savefig(out / "fit_vs_success.pdf")
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------- tables
 def table_main(suite, an, out):
     fresh = next(r for r in suite["conditions"] if r["condition"] == "fresh")
@@ -261,7 +355,7 @@ def table_learning(an, out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", type=Path, default=Path("results/final_run"))
-    parser.add_argument("--artifacts", type=Path, help="Full run directory, only to (re)extract hold_trace.csv")
+    parser.add_argument("--artifacts", type=Path, help="Full run directory, only to (re)extract the per-step trace CSVs")
     parser.add_argument("--output", type=Path, default=Path("report"))
     args = parser.parse_args()
     suite = json.loads((args.results / "suite" / "summary.json").read_text())
@@ -274,6 +368,8 @@ def main():
     fig_hold(hold_trace(args.results, args.artifacts), figs)
     table_main(suite, an, tabs)
     mem = json.loads((args.results / "memory" / "summary.json").read_text())
+    fig_memory_trace(memory_trace(args.results, args.artifacts), figs)
+    fig_fit_vs_success(an, mem, args.results, figs)
     table_memory(mem, tabs)
     table_ablation(an, mem, args.results, tabs)
     table_learning(an, tabs)

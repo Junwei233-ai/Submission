@@ -36,7 +36,9 @@ fresh scenes (expert: 293). Implicit memory alone fails: in 188 of 300 runs the 
 stopping. The recurrent policy with an explicit latch matches the expert ($p=0.55$), holds the target
 as well, recovers from base pushes that defeat the expert (56/60 vs 38/60), and runs in 87\,$\mu$s per
 1\,kHz step. A second finding concerns how to act: regressing torques directly fails in all 208
-validation scenes, while a learned velocity field tracked by a PD layer succeeds in 207.
+validation scenes, while a learned velocity field tracked by a PD layer succeeds in 207. Open-loop loss
+cannot tell the working memory design from a failing one, and replaying the frozen policy shows that its arm has learned a map
+close to the Jacobian pseudo-inverse, which it never sees.
 \end{abstract}
 
 \section{Introduction}
@@ -79,7 +81,10 @@ specific information a policy must remember rather than giving it as much histor
 \subsection{Expert data}
 We sample 1500 scenes (target $x,y\in[-1.6,1.6]$\,m, $z\in[0.1,1.3]$\,m; base start $\pm0.6$\,m, any
 heading; arm start $\pm0.15$\,rad around the template posture) and run the expert headless at 1\,kHz,
-recording inputs, actions and end-effector position. We keep the 1391 successful runs and split them by
+recording inputs, actions and end-effector position. We keep the 1391 successful runs: the other 109
+stalled, hit the step limit or ended more than 1\,cm away, and cloning them would teach the policy to stop
+short, so here quality matters more than quantity (the fresh test set is not filtered,
+Section~\ref{sec:protocol}). We split them by
 whole trajectory (seed 42) into 973/208/210 for training, validation and a development test set;
 splitting by frame would leak near-identical neighbouring frames. Normalisation uses training data only.
 The learning curve (Fig.~\ref{fig:lc}) shows how much data is needed: success rises from 157/208 with 97
@@ -100,7 +105,7 @@ checked once with \texttt{check\_stop\_label.py}, which is the only code that re
 \item \textbf{Parking pose:} the recorded base pose at $t_\text{stop}$, one sample per trajectory.
 \end{itemize}
 
-\subsection{Policy}
+\subsection{Policy}\label{sec:policy}
 Fig.~\ref{fig:arch} shows the policy. Every 10\,ms a GRU~\cite{cho2014} (128 hidden units) reads 18
 features in the base frame: target position and distance, the parking pose predicted by a small MLP
 from the target, the end-effector error $e$, and the 7 joint angles. It outputs 4 wheel commands, a
@@ -171,7 +176,9 @@ every wheel command is below 0.05\,rad/s.
 L2 and L3 differ only in the stop head: same inputs, data, training and gains. L1 also differs in
 architecture; its arm gains come from the same grid and rule on validation (with the expert base, as
 in its original protocol). L1 and L2 were trained after B was frozen, on the same 973 trajectories, and
-no choice used the fresh set.
+no choice used the fresh set. The study is also our answer to whether the model should see a single
+time instant or a temporal interval: L0 and L1 see one instant, L2 and L3 the whole history through the
+GRU state, and L1 vs.\ L3 asks how much the interval adds once the one missing bit is supplied.
 
 \textbf{Plain regressors (L0).} To test whether any of this structure is needed, L0 is the task
 taken literally: a regressor from the 21 raw inputs to the 11 raw actions (4 wheel commands, 7 torques),
@@ -197,7 +204,7 @@ mean time, then fewest torque-clipped steps. With 12 cheap points and a flat lan
 
 \section{Experiments and Results}
 
-\subsection{Protocol}
+\subsection{Protocol}\label{sec:protocol}
 During development the original test split was used three times and variant B was designed after
 inspecting its failures, so it is no longer unbiased. We therefore fixed a protocol before seeing
 results: retrain both models, choose gains on validation, check that development numbers reproduce
@@ -221,7 +228,33 @@ below the threshold, and in 78 they never fall below it. Because the arm is not 
 while the base drives (median drift 0.31\,rad vs 0.04\,rad for B), so reaching starts from a wrong
 posture on a moving base. The stage change is a discrete, irreversible event; a hidden state trained
 only to regress wheel speeds with MSE has no reason to represent it as one, and its small errors
-compound as BC theory predicts~\cite{ross2011}.
+compound as BC theory predicts~\cite{ross2011}. Fig.~\ref{fig:memtrace} shows one fresh scene: L2's wheel
+command dips below the threshold at 10.6\,s, while the error is still 2\,cm, then rises again; the base
+creeps away and the error grows to a metre. L1 and L3 stop the wheels at once and reach the target.
+
+\textbf{Offline loss cannot see this.} L2's validation wheel loss (0.062) lies inside the spread of B's
+three seeds (0.054--0.067), yet L2 succeeds in 54 of 208 validation scenes and B in 207--208
+(Fig.~\ref{fig:fit}). Within one design the loss does rank models: along B's learning curve lower loss
+goes with higher success. It cannot compare designs that differ in what they remember, plausibly because the
+wheel loss is dominated by the driving phase while a wrong stage affects only a few frames near the stop.
+This is why we compare designs and select gains on closed-loop success, not on loss.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{memory_trace.pdf}
+\caption{The four memory levels in one fresh scene. Top: largest wheel command (dashed: L2's ``done''
+threshold). Bottom: end-effector error. L0 saturates and drives off; L2's wheels stop briefly, restart and its base
+creeps away; L1 and L3 latch and succeed (dots).}
+\label{fig:memtrace}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fit_vs_success.pdf}
+\caption{Open-loop fit vs.\ closed-loop success on validation. Same GRU, inputs and loss definition for
+all points; B on nested data subsets and three seeds, and L2, which only lacks the stop head.}
+\label{fig:fit}
+\end{figure}
 
 \textbf{A latch alone works surprisingly well (L1: 272/300).} Apart from the stage, the task is close to
 Markov in our base-frame features, and the latch supplies the one missing bit. The single frame still
@@ -301,6 +334,20 @@ report it as a diagnosis and did not retune v3; the fix is to include holding in
 \begin{adjustbox}{max width=\columnwidth}\input{tables/ablation.tex}\end{adjustbox}
 \end{table}
 
+\subsection{What did the arm learn?}\label{sec:arm}
+Section~\ref{sec:policy} argued that $M$ can take the shape of an IK map. We test this after freezing
+by replaying the frozen GRU on the logged states of B's 300 fresh runs and comparing $M$, at each of the
+84,534 updates after the latch with $|e|\ge1$\,cm, with the arm's position Jacobian $J$ at that state,
+which the policy never sees. The commanded end-effector motion $JMe$ points at the target (median cosine
+with $e$ 0.992, interquartile range 0.97--1.00) and closes the error at a near-constant rate (median
+$|JMe|/|e|=1.47$\,s$^{-1}$). The same measures on the expert's labels $v$ at validation demonstration
+states give 0.994 and 1.39\,s$^{-1}$. $M$ is close to the pseudo-inverse $J^{+}$ (median matrix cosine
+0.93) and far from the transpose $J^\top$ (0.55): from joint-angle differences alone the network has
+learned a differential-IK map. It differs from the expert in the null space: a median 31\% of B's joint
+motion does not move the end-effector, against 6\% for the expert. This motion is invisible in $e$ and
+does not hurt reaching, but it shows that the clone matches the expert more closely in task space than
+in joint space.
+
 \subsection{Robustness and generalisation}
 Fig.~\ref{fig:cond} shows perturbed and out-of-distribution (OOD) scenes; B and the expert see identical
 perturbations.
@@ -348,7 +395,9 @@ fails (83/300), because the stage is a discrete, irreversible decision that regr
 to. A hand-coded latch on single-frame networks recovers most of the performance (272/300), and a
 recurrent policy with an explicit, supervised and latched stop output matches the expert (296 vs 293),
 holds the target as well, and recovers from base pushes that defeat it. Independently, the arm must act
-through a learned velocity field and a PD layer: direct torque regression never succeeds. In BC, the
+through a learned velocity field and a PD layer: direct torque regression never succeeds, while the
+learned field turns out to approximate the Jacobian pseudo-inverse. Open-loop loss could not separate the
+designs that work from those that fail; only closed-loop evaluation could. In BC, the
 choice of \emph{what} to remember, \emph{what} to imitate and \emph{how} to act matters more than
 accuracy on recorded data.
 
@@ -356,7 +405,8 @@ accuracy on recorded data.
 corrects the rare wrong stop decisions. (ii) The PD layer, the park-then-reach structure and the latch are fixed,
 and forward kinematics uses the robot model. (iii) The template's first-entry success test hides poor
 damping, which biased our gain selection. (iv) Robustness and OOD tests use 40--60 scenes and one
-perturbation level; only the GRU seed was varied. (v) In the memory study L1 also differs in architecture
+perturbation level; only the GRU seed was varied, while hidden size (128), learning rate and feature set
+were fixed rather than swept. (v) In the memory study L1 also differs in architecture
 from L3, and L2 reuses B's gains rather than its own grid.
 
 \textbf{Improvements.} Aggregate policy roll-outs relabelled with the expert (DAgger); learn a residual
