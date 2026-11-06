@@ -406,7 +406,8 @@ bit-identical results), while across platforms 1–3 borderline scenes can flip.
   low-target runs its own error has a median of 4.8 cm (high targets 1.8 cm; in distribution 0.2 cm).
 - **FK frame sampling** was chosen on validation from two candidates, with the GRU then trained on URDF e
   (commit `d60e55f`): all frames every 5 steps gave 196/208, every 2nd frame after the stop and every 20th
-  before gave 198/208 (discordant 2 / 4, not significant); the second is used. The test set was not used.
+  before gave 198/208 (a difference of two scenes, not significant); the second is used. The test set
+  was not used.
 - **GRU trained on URDF e, run with the learned FK** (the earlier B-FK, `fk_run/urdf_trained_gru/`):
   198/208 and 288/300 on this machine (289/300 on a team member's machine). Retraining on the learned e
   makes training and run time consistent without changing the fresh-test result.
