@@ -36,7 +36,7 @@ RESULTS = ROOT / "results" / "final_run"
 SETS = {"fresh": "fresh_test", "robustness": "robustness_60", "far_target": "ood/far_target",
         "high_target": "ood/high_target", "low_target": "ood/low_target", "wide_start": "ood/wide_start"}
 # Reported 1 cm successes (README Section 7) for the unperturbed sets, to compare against.
-REPORTED = {("B-FK", "fresh"): "289/300", ("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
+REPORTED = {("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
             ("B", "far_target"): "40/40", ("expert", "far_target"): "40/40",
             ("B", "high_target"): "40/40", ("expert", "high_target"): "15/40",
             ("B", "low_target"): "29/40", ("expert", "low_target"): "30/40",
@@ -46,7 +46,7 @@ REPORTED = {("B-FK", "fresh"): "289/300", ("B", "fresh"): "296/300", ("v3", "fre
 def controller_args(name):
     if name == "expert":
         return ["--base", "expert", "--arm", "expert"]
-    model = {"B-FK": "gru_B_park", "B": "gru_B_park", "v3": "gru_v3_bearing"}[name]
+    model = {"B-FK": "fk_run/gru_B_park", "B": "gru_B_park", "v3": "gru_v3_bearing"}[name]
     grid = {"B-FK": "grid_B_park", "B": "grid_B_park", "v3": "grid_v3_bearing"}[name]
     chosen = json.loads((RESULTS / grid / "grid.json").read_text())["chosen"]
     learned = ["--fk-model", str(RESULTS / "fk_run" / "fk.npz"), "--gravity", "zero"] if name == "B-FK" else []

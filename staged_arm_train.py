@@ -17,16 +17,17 @@ import torch
 from torch import nn
 
 from staged_data import stop_index
-from staged_policy import NumpyMLP, arm_features
+from staged_policy import LearnedFK, NumpyMLP, arm_features
 from staged_train import make_mlp, normaliser
 
 DT = 0.001
 
 
-def arm_frames(path, half_window, stride):
+def arm_frames(path, half_window, stride, fk=None):
     """Features and velocity labels for one trajectory, from the public stop time onwards."""
     with np.load(path, allow_pickle=False) as data:
-        x, actions, ee = data["inputs"], data["actions"], data["ee_pos"]
+        x, actions = data["inputs"], data["actions"]
+        ee = fk(x[:, 4:11], x[:, :3], x[:, 3]) if fk else data["ee_pos"]
     q, yaw, target = x[:, 4:11], x[:, 3], x[0, 18:21]
     start = max(stop_index(actions), half_window)
     index = np.arange(start, len(x) - half_window, stride)
@@ -35,8 +36,8 @@ def arm_frames(path, half_window, stride):
     return arm_features(error, yaw[index], q[index]), velocity
 
 
-def load(paths, half_window, stride):
-    pairs = [arm_frames(p, half_window, stride) for p in paths]
+def load(paths, half_window, stride, fk=None):
+    pairs = [arm_frames(p, half_window, stride, fk) for p in paths]
     return np.concatenate([p[0] for p in pairs]), np.concatenate([p[1] for p in pairs])
 
 
@@ -54,6 +55,7 @@ def main():
     parser.add_argument("--kp", type=float, default=100.0)
     parser.add_argument("--kd", type=float, default=30.0)
     parser.add_argument("--lead", type=float, default=0.15)
+    parser.add_argument("--fk-model", type=Path, help="Learned forward kinematics instead of the recorded ee_pos")
     parser.add_argument("--limit", type=int, help="Smoke test: first N trajectories per split")
     args = parser.parse_args()
     if args.output.exists():
@@ -61,7 +63,8 @@ def main():
     started = time.perf_counter()
     split = json.loads((args.model_dir / "split.json").read_text())
     source = Path(split["source"])
-    data = {name: load([source / n for n in split["splits"][name][:args.limit]], args.half_window, args.stride)
+    fk = LearnedFK(args.fk_model) if args.fk_model else None
+    data = {name: load([source / n for n in split["splits"][name][:args.limit]], args.half_window, args.stride, fk)
             for name in ("train", "validation")}
     for name, (x, y) in data.items():
         print(f"{name}: {len(x)} frames", flush=True)

@@ -233,27 +233,29 @@ B-FK replaces both uses of the URDF in the policy:
 
 - **Forward kinematics.** An MLP (`staged_fk_train.py`, `staged_policy.LearnedFK`) maps the 7 joint angles to
   the end-effector position in the base frame, which is rotated with the measured base pose to get e.
-  - Data: expert runs of the training scenes that continue for 2 s after success, so converged poses are
-    covered. Labels are the recorded end-effector positions.
-  - Frames: every 2nd after the stop time, every 20th before it (the arm barely moves then).
-  - Two hidden layers of 512 ReLU units, 268,291 parameters; MSE, Adam, cosine learning rate, 60 epochs.
-  - Validation error on the final frame: median 2.0 mm, p95 6.2 mm, maximum 15.4 mm.
+  - Data: expert runs of the training scenes that continue for 2 s after success. At the final frame the
+    expert has converged on the target, so that frame is one sample: q → target in the base frame. This
+    gives 967 samples and uses no recorded end-effector position.
+  - Two tanh hidden layers of 256 units, 68,611 parameters; MSE, Adam, weight decay 1e-5, cosine learning
+    rate, 400 epochs.
+  - Validation error on final poses: median 2.5 mm, p95 7.6 mm, maximum 18.9 mm, 203 of 208 within 1 cm.
+  - The samples are final poses, so the estimate is less reliable far from any target.
 - **Gravity.** The term is removed (`--gravity zero`), so `τ = Kp (q_ref − q) + Kd (v − qd)`. The integrated
   reference acts like an integral term, as described above.
-- **Unchanged.** The GRU and parking MLP weights, the latch and the gains. The GRU was trained on recorded
-  end-effector errors. At run time it receives the MLP's estimate, so an MLP error appears as an error in
-  e, and the arm stops where the estimated error is zero.
+- **Training.** L3, L2 and L1 receive the MLP's estimate of e in training as well as at run time
+  (`--fk-model`), and do not read the recorded `ee_pos`. The arm stops where the estimated error is zero.
+- **Unchanged.** The parking MLP and the rest of the architecture.
 - **Gains.** B's 200/30/0.2 are reused. They were selected with the URDF model and checked on validation
   with the learned model (198/208), not searched again.
 
-`staged_rollout.py` refuses `--fk-model` without `--gravity zero`. In B-FK, pinocchio is used only to score
-the true end-effector error, which the policy never reads.
+`staged_rollout.py` refuses `--fk-model` without `--gravity zero`. In B-FK, the URDF is used by the simulator,
+by the expert that produces the demonstrations (it also decides which runs succeed), and to score the true
+end-effector error, which the policy never reads.
 
 ## 10. Evaluation and results
 
 See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summary.md`. B-FK's results are
-in README Section 7.1.1 and `results/final_run/fk_run/`: 198/208 on validation and 289/300 on the fresh test.
-The rest of this section reports variant B. In brief:
+in README Section 7.1.1 and `results/final_run/fk_run/`. The rest of this section reports variant B. In brief:
 
 - **Fresh test** (300 scenes, seed 2026, unfiltered): B 296, v3 289, expert 293. B vs expert p = 0.55;
   B vs v3 p = 0.092.

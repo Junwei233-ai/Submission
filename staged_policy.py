@@ -178,16 +178,26 @@ def local_position(point, base_pos, yaw):
 
 
 class LearnedFK:
-    """Learned forward kinematics (staged_fk_train.py): arm joints and base pose -> EE world position."""
+    """Learned forward kinematics (staged_fk_train.py), two tanh hidden layers (broadcasts over rows)."""
 
     def __init__(self, path):
         with np.load(path, allow_pickle=False) as data:
-            self.net = NumpyMLP({k: data[k] for k in data.files}, "fk")
+            self.w = {k: data[k] for k in data.files}
+
+    def local(self, q_arm):
+        """Arm joints -> EE position in the base frame."""
+        w = self.w
+        h = (np.asarray(q_arm, dtype=float) - w["fk_x_mean"]) / w["fk_x_scale"]
+        h = np.tanh(h @ w["fk_w0"].T + w["fk_b0"])
+        h = np.tanh(h @ w["fk_w2"].T + w["fk_b2"])
+        return (h @ w["fk_w4"].T + w["fk_b4"]) * w["fk_y_scale"] + w["fk_y_mean"]
 
     def __call__(self, q_arm, base_pos, yaw):
-        local = self.net(q_arm)
+        """Arm joints and base pose -> EE world position."""
+        local = self.local(q_arm)
         c, s = np.cos(yaw), np.sin(yaw)
-        return np.asarray(base_pos, dtype=float) + np.array((c * local[0] - s * local[1], s * local[0] + c * local[1], local[2]))
+        return np.asarray(base_pos, dtype=float) + np.stack((c * local[..., 0] - s * local[..., 1],
+                                                             s * local[..., 0] + c * local[..., 1], local[..., 2]), axis=-1)
 
 
 def sigmoid(x):

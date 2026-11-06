@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Evaluate the frozen models with learned forward kinematics and no gravity term. Uses only files in
-# this repository: no data collection and no training. All levels use gains 200/30/0.2, so the arm
+# Evaluate the models trained by run_fk_train.sh, with learned forward kinematics and no gravity term.
+# Uses only files in this repository: no data collection and no training. All levels use gains 200/30/0.2, so the arm
 # layer is the same for all of them. Per-scene results are copied to results/final_run/fk_run/ so they can
 # be committed and compared scene by scene.
 # Usage: PY=/path/to/python bash run_fk_study.sh L3|L2|L1|robust|ood|expert [WORKERS=8]
@@ -14,9 +14,9 @@ R=results/final_run
 OUT=artifacts/fk_study
 FK=$R/fk_run/fk.npz
 ARM=(--gravity zero --fk-model "$FK" --kp 200 --kd 30 --lead 0.2)
-L3=(--base gru --arm gru --gru-model "$R/gru_B_park/gru.npz" "${ARM[@]}")
-L2=(--base gru --arm gru --gru-model "$R/memory/gru_nostop/gru.npz" "${ARM[@]}")
-L1=(--base ours --arm ours --arm-model "$R/memory/fournet_arm/arm.npz" "${ARM[@]}")
+L3=(--base gru --arm gru --gru-model "$R/fk_run/gru_B_park/gru.npz" "${ARM[@]}")
+L2=(--base gru --arm gru --gru-model "$R/fk_run/gru_nostop/gru.npz" "${ARM[@]}")
+L1=(--base ours --arm ours --arm-model "$R/fk_run/fournet_arm/arm.npz" "${ARM[@]}")
 EXPERT=(--base expert --arm expert)
 mkdir -p "$OUT"
 

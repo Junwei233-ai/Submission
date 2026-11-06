@@ -1,0 +1,26 @@
+{
+  "samples": 2700861,
+  "validation_samples": 58419,
+  "best_epoch": 53,
+  "epochs_run": 60,
+  "validation_loss": 0.0003543310158420354,
+  "wall_s": 592.3469675829983,
+  "validation_all_frames": {
+    "median_mm": 1.6432140089005813,
+    "p95_mm": 4.290640981074769,
+    "max_mm": 15.540964735007835,
+    "under_5mm": 0.9650365920724226
+  },
+  "validation_after_stop": {
+    "median_mm": 1.8737051428390725,
+    "p95_mm": 5.5650145522570185,
+    "max_mm": 15.648218594467632,
+    "under_5mm": 0.9266219369330119
+  },
+  "validation_final_frame": {
+    "median_mm": 2.0370570393662497,
+    "p95_mm": 6.177021675382367,
+    "max_mm": 15.416978812605299,
+    "under_5mm": 0.9038461538461539
+  }
+}

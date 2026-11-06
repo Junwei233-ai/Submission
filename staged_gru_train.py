@@ -13,6 +13,9 @@ wheels are zero after it, so the arm loss is only taken on frames after the stop
 With --arm-output torque (ablation) the arm head outputs the 7 recorded joint torques directly,
 applied with zero-order hold and no PD layer or gravity term.
 
+With --fk-model the end-effector position in the features comes from the learned forward kinematics,
+as at run time, and the recorded ee_pos is not read.
+
 With --features park the hand-made world-bearing and target-direction inputs are replaced by the
 parking pose predicted by the learned park MLP in --model-dir (gru_park_features); its weights
 are copied into the GRU file.
@@ -29,7 +32,7 @@ import torch
 from torch import nn
 
 from staged_data import stop_index
-from staged_policy import (GRU_FEATURES, GRU_PERIOD, PARK_GRU_FEATURES, GRUPolicy, NumpyMLP, gru_features,
+from staged_policy import (GRU_FEATURES, GRU_PERIOD, PARK_GRU_FEATURES, GRUPolicy, LearnedFK, NumpyMLP, gru_features,
                            gru_park_features, park_pose)
 
 LATCH_CANDIDATES = (1, 2, 3, 5, 10, 20)  # GRU updates (10 ms each)
@@ -37,10 +40,11 @@ LATCH_CANDIDATES = (1, 2, 3, 5, 10, 20)  # GRU updates (10 ms each)
 DT = 0.001
 
 
-def sequence(path, half_window, park_net=None):
+def sequence(path, half_window, park_net=None, fk=None):
     """Features, wheel, arm velocity, stop and arm torque labels at every GRU_PERIOD-th step."""
     with np.load(path, allow_pickle=False) as data:
-        x, actions, ee = data["inputs"], data["actions"], data["ee_pos"]
+        x, actions = data["inputs"], data["actions"]
+        ee = fk(x[:, 4:11], x[:, :3], x[:, 3]) if fk else data["ee_pos"]
     index = np.arange(0, len(x), GRU_PERIOD)
     lo, hi = np.maximum(index - half_window, 0), np.minimum(index + half_window, len(x) - 1)
     velocity = (x[hi, 4:11] - x[lo, 4:11]) / ((hi - lo)[:, None] * DT)
@@ -96,6 +100,7 @@ def main():
                         help="matrix: v = M @ error tracked by PD; torque: direct joint torques (ablation)")
     parser.add_argument("--features", choices=("bearing", "park"), default="bearing",
                         help="bearing: gru_features; park: gru_park_features with the learned park MLP")
+    parser.add_argument("--fk-model", type=Path, help="Learned forward kinematics instead of the recorded ee_pos")
     parser.add_argument("--limit", type=int, help="Smoke test: first N trajectories per split")
     args = parser.parse_args()
     if args.output.exists():
@@ -109,7 +114,8 @@ def main():
         with np.load(args.model_dir / "policy.npz", allow_pickle=False) as data:
             park_arrays = {k: data[k] for k in data.files if k.startswith("park_")}
         park_net = NumpyMLP(park_arrays, "park")
-    raw = {name: [sequence(source / n, args.half_window, park_net) for n in split["splits"][name][:args.limit]]
+    fk = LearnedFK(args.fk_model) if args.fk_model else None
+    raw = {name: [sequence(source / n, args.half_window, park_net, fk) for n in split["splits"][name][:args.limit]]
            for name in ("train", "validation")}
     train_x = np.concatenate([s[0] for s in raw["train"]])
     x_mean, x_scale = train_x.mean(axis=0), train_x.std(axis=0)
@@ -194,7 +200,7 @@ def main():
         arrays.update(torque_mean=torque_mean, torque_scale=torque_scale)
     arrays.update(park_arrays)
     labels = np.concatenate([s[2] for s in raw["train"]])
-    metadata = dict(policy_type="gru", feature_set=args.features,
+    metadata = dict(policy_type="gru", feature_set=args.features, ee_source="learned FK" if fk else "recorded ee_pos",
                     features=PARK_GRU_FEATURES if park_net else GRU_FEATURES, period=GRU_PERIOD, hidden=args.hidden,
                     stop_head=args.stop_head, latch_ticks=1, arm_output=args.arm_output,
                     kp=args.kp, kd=args.kd, reference_lead=args.lead,

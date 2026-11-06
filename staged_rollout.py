@@ -134,7 +134,7 @@ def run(args):
 
         limits = np.array([WHEEL_LIMIT] * 4 + [TORQUE_LIMIT] * 7)
         cmd = MotorCommands()
-        log = dict(inputs=[], actions=[], ee_error=[], done=[], ee_pos=[])
+        log = dict(inputs=[], actions=[], ee_error=[], done=[])
         done_time = done_pose = first_5cm = None
         clipped, reason, t = 0, "step_limit", 0.0
         success_t = success_error = hold_max = None  # --hold-time: keep simulating after success
@@ -221,7 +221,6 @@ def run(args):
             log["actions"].append(action)
             log["ee_error"].append(error)
             log["done"].append(done)
-            log["ee_pos"].append(ee)  # labels for staged_fk_train.py; no policy reads this log
             if first_5cm is None and done and error < 0.05 and t > MIN_TIME:
                 first_5cm = t
             # Same test as check_stop: on the pre-step state, after the minimum time.
