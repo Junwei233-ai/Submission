@@ -40,10 +40,9 @@ state, and a GRU with an explicit, latched stop output. They reach 239, 86 and 2
 (expert: 293). Implicit memory alone fails: in 148 of 300 runs the wheels restart after stopping, although
 its open-loop loss is close to the latched policy's. The recurrent policy with an explicit latch is not
 significantly worse than the expert ($p=0.33$), recovers from base pushes that defeat it (53/60 vs 38/60)
-and runs in 342\,$\mu$s per 1\,kHz step. Regressing torques directly fails in all 208 validation scenes,
-while a learned velocity field tracked by a PD layer succeeds, and replaying the policy shows that this
-field approximates the Jacobian pseudo-inverse. The price of removing the robot model is accuracy near
-the FK network's error and poor extrapolation to unseen arm postures.
+and runs in 342\,$\mu$s per 1\,kHz step. Regressing torques directly fails in all 208 validation scenes, while
+the learned velocity field approximates the Jacobian pseudo-inverse. Removing the robot model costs
+accuracy near the FK network's error and extrapolation to unseen arm postures.
 \end{abstract}
 
 \section{Introduction}
@@ -82,6 +81,10 @@ memory using the same training data, data split and test scenes:
     combining hidden-state memory with an explicit latch that
     maintains the stopped state once triggered.
 \end{itemize}
+As a reference, L0 regresses the raw actions on the raw inputs with no memory at all. Two further
+questions run through the study: how the policy should act on the arm (a learned velocity field tracked by
+a PD layer versus direct torque regression), and what it costs to remove the robot model, by learning the
+forward kinematics instead of computing it from the URDF.
 Recent BC methods condition on observation histories~\cite{zhao2023act,chi2023diffusion}, but history can
 cause causal confusion~\cite{dehaan2019causal} and copycat behaviour~\cite{wen2020copycat}, which motivates
 asking which information a policy must remember rather than giving it as much as possible.
@@ -145,7 +148,7 @@ limits were fixed by hand and not swept.
 \begin{tikzpicture}[font=\scriptsize, node distance=3mm and 4mm,
   box/.style={draw, rounded corners=1pt, align=center, inner sep=2pt, minimum height=6mm},
   fixed/.style={box, fill=gray!12}, arr/.style={-{Latex[length=1.5mm]}}]
-\node[box] (in) {state, target\\$\to$ 18 features\\(base frame)};
+\node[fixed] (in) {state, target\\$\to$ 18 features\\(base frame)};
 \node[box, above=of in] (park) {parking MLP\\target $\to$ pose};
 \node[box, below=of in] (fk) {FK MLP\\$q \to$ end-effector};
 \node[box, right=of in, minimum height=14mm] (gru) {GRU\\128\\100\,Hz};
@@ -415,7 +418,8 @@ same two scenes it fails without perturbation, so the closed loop absorbs these 
 \item \textbf{Base push} (20\,N for 0.2\,s): B-FK 53/60 vs expert 38/60 ($p=0.002$). The push slides the base about a
 metre; the expert's state machine does not recover before its time-out, while the GRU re-plans every 10\,ms.
 \item \textbf{OOD targets expose the learned FK.} Far targets are solved by both (40/40). For high
-targets B-FK reaches 17/40 (expert 15/40; with the analytic FK 40/40), for low targets 3/40 (expert
+targets B-FK reaches 17/40 (expert 15/40, because it projects targets onto a 0.85\,m reach sphere and
+stops 1.8--5.8\,cm short; with the analytic FK 40/40), for low targets 3/40 (expert
 30/40, analytic FK 29/40), for wide starts 29/40 (expert 39/40, analytic FK 38/40). At the end of the
 low-target runs the FK network's own error has a median of 4.8\,cm (high: 1.8\,cm), against 0.2\,cm in
 distribution: it is accurate only on arm postures like those it was trained on.
