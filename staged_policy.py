@@ -66,6 +66,30 @@ class StagedBase:
         return self.nets["wheels"](features), False
 
 
+class DirectPolicy:
+    """Plain BC baseline (L0): raw 21 inputs -> raw 4 wheel commands and 7 arm torques, applied directly.
+
+    kind "linear": ridge regression (weight, bias); kind "mlp": NumpyMLP with prefix "direct".
+    Both standardise inputs and outputs with stored training statistics. No latch, no PD layer.
+    """
+
+    def __init__(self, path):
+        with np.load(path, allow_pickle=False) as data:
+            self.w = {k: data[k] for k in data.files}
+        self.kind = str(self.w["kind"])
+        self.mlp = NumpyMLP(self.w, "direct") if self.kind == "mlp" else None
+
+    def act(self, x):
+        """x: base_pos (3), base_bearing (1), q_mes (7), qd_mes (7), target (3). Returns (wheels, torques)."""
+        x = np.asarray(x, dtype=np.float64)
+        if self.mlp is not None:
+            y = self.mlp(x)
+        else:
+            w = self.w
+            y = (w["weight"] @ ((x - w["x_mean"]) / w["x_scale"]) + w["bias"]) * w["y_scale"] + w["y_mean"]
+        return y[:4], y[4:11]
+
+
 def arm_features(ee_error_world, base_yaw, q_arm):
     """End-effector error rotated into the base yaw frame, followed by the 7 arm joint angles."""
     c, s = np.cos(base_yaw), np.sin(base_yaw)

@@ -190,7 +190,8 @@ def table_main(suite, an, out):
 
 def table_memory(mem, out):
     """Memory study: three levels of stage memory, same data, split and scenes (memory/summary.json)."""
-    names = {"L1": (r"L1 four single-frame MLPs", "latch only"),
+    names = {"L0mlp": (r"L0 plain MLP regressor", "none"),
+             "L1": (r"L1 four single-frame MLPs", "latch only"),
              "L2": (r"L2 GRU, no stop head", "hidden state only"),
              "L3": (r"\textbf{L3 = B}: GRU + stop head", "hidden state + latch")}
     lines = [r"\begin{tabular}{@{}llcccc@{}}", r"\toprule",
@@ -202,6 +203,9 @@ def table_memory(mem, out):
                      f"{v['all']['never_done']} / {f['all']['never_done']} " + r"\\")
     lines += [r"\midrule",
               r"\multicolumn{6}{@{}l@{}}{$^*$Exact McNemar, fresh set. $^\dagger$Base never stops (val./fresh).} \\",
+              r"\multicolumn{6}{@{}l@{}}{L0: raw 21 inputs $\to$ raw 11 actions. Open-loop val.\ $R^2$ (wheels / torques):} \\",
+              r"\multicolumn{6}{@{}l@{}}{\quad MLP %.2f / %.2f, linear %.2f / %.2f.} \\"
+              % tuple(mem["L0_open_loop"][k][f"r2_mean_{g}"] for k in ("mlp", "linear") for g in ("wheels", "torques")),
               r"\multicolumn{6}{@{}l@{}}{Wheels restart after ``done'' (val./fresh): L2 %d / %d; with a latch impossible.} \\"
               % (mem["validation"]["L2"]["all"]["restarts"], mem["fresh"]["L2"]["all"]["restarts"]),
               r"\multicolumn{6}{@{}l@{}}{Arm drift before ``done'', median (rad): L1 %.2f, L2 %.2f, L3 %.2f (validation).} \\"

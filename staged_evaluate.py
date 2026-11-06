@@ -49,8 +49,9 @@ def summarise(rows):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-dir", type=Path, required=True, help="Directory with split.json (and base policy.npz)")
-    parser.add_argument("--base", choices=("ours", "expert", "gru"), required=True)
-    parser.add_argument("--arm", choices=("ours", "expert", "gru"), required=True)
+    parser.add_argument("--base", choices=("ours", "expert", "gru", "direct"), required=True)
+    parser.add_argument("--arm", choices=("ours", "expert", "gru", "direct"), required=True)
+    parser.add_argument("--direct-model", type=Path, help="Plain BC regressor (staged_direct_train.py)")
     parser.add_argument("--gru-model", type=Path)
     parser.add_argument("--arm-model", type=Path)
     parser.add_argument("--latch-steps", type=int)
@@ -117,6 +118,8 @@ def main():
             command += ["--arm-model", str(args.arm_model)]
         if args.base == "gru":
             command += ["--gru-model", str(args.gru_model)]
+        if args.base == "direct":
+            command += ["--direct-model", str(args.direct_model)]
         if args.latch_steps:
             command += ["--latch-steps", str(args.latch_steps)]
         for flag in ("kp", "kd", "lead", "nav_timeout", "obs_noise", "torque_scale", "push_base",

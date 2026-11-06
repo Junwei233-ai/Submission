@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent
 TASK_DIR = ROOT / "robotnik_arm_task"
 sys.path.insert(0, str(TASK_DIR))
 
-from staged_policy import GRUPolicy, StagedArm, StagedBase  # noqa: E402
+from staged_policy import DirectPolicy, GRUPolicy, StagedArm, StagedBase  # noqa: E402
 
 FINGER_ANGLES = np.full(6, 0.1)
 BASE_NAV_TIMEOUT, ARM_REACH_LIMIT = 25.0, 0.85
@@ -26,6 +26,45 @@ STANDOFF_Z_POINTS, STANDOFF_POINTS = [0.1, 0.5, 1.1, 1.25], [0.80, 0.65, 0.65, 0
 REACH_TOLERANCE, MIN_TIME, MAX_STEPS = 0.01, 8.0, 40000
 WHEEL_LIMIT, TORQUE_LIMIT = (0.25 + 1.0 * 0.66 / 2) / 0.11, 30.0
 GRU_WHEELS_STOPPED = 0.05  # rad/s; evaluation-only 'base done' threshold for the GRU policy
+
+
+class Viewer:
+    """--gui only (as in the template): PyBullet window paced to real time, a red marker on the target,
+    a status line, and 'q' to quit. It reads nothing the controllers do not already see."""
+
+    def __init__(self, client, target, base_pos, label, speed):
+        self.client, self.speed, self.label = client, speed, label
+        self.start, self.text, self.next_text = time.perf_counter(), -1, 0.0
+        shape = client.createVisualShape(client.GEOM_SPHERE, radius=0.025, rgbaColor=[0.9, 0.1, 0.1, 0.9])
+        client.createMultiBody(baseMass=0, baseVisualShapeIndex=shape, basePosition=list(target))
+        mid = (np.asarray(base_pos[:2]) + np.asarray(target[:2])) / 2
+        client.resetDebugVisualizerCamera(cameraDistance=3.2, cameraYaw=45, cameraPitch=-35,
+                                          cameraTargetPosition=[mid[0], mid[1], 0.4])
+        self.target = np.asarray(target, dtype=float)
+
+    def _status(self, line, color=(0.1, 0.1, 0.1)):
+        kwargs = dict(replaceItemUniqueId=self.text) if self.text >= 0 else {}
+        self.text = self.client.addUserDebugText(line, (self.target + [0, 0, 0.35]).tolist(), textColorRGB=list(color),
+                                                 textSize=1.4, **kwargs)
+
+    def update(self, t, error, done, success_t):
+        """Pace to real time, refresh the status line; True if the user pressed 'q'."""
+        if t >= self.next_text:
+            stage = "reaching" if done else "driving"
+            self._status(f"{self.label}  t={t:4.1f}s  {stage}  EE error {100 * error:5.1f} cm"
+                         + ("  SUCCESS" if success_t is not None else ""))
+            self.next_text = t + 0.25
+        lag = t / self.speed - (time.perf_counter() - self.start)
+        if lag > 0:
+            time.sleep(lag)
+        keys = self.client.getKeyboardEvents()
+        return ord("q") in keys and keys[ord("q")] & self.client.KEY_WAS_TRIGGERED
+
+    def finish(self, reason, error, t, hold_s=3.0):
+        ok = reason == "success"
+        self._status(f"{self.label}  {'SUCCESS' if ok else reason.upper()} at t={t:.1f}s, EE error {100 * error:.1f} cm",
+                     (0.0, 0.6, 0.0) if ok else (0.8, 0.0, 0.0))
+        time.sleep(hold_s)
 
 
 def run(args):
@@ -53,7 +92,7 @@ def run(args):
     with tempfile.TemporaryDirectory() as tmp:
         config_path = Path(tmp) / "robotnik_arm.json"
         config_path.write_text(json.dumps(config))
-        sim = pb.SimInterface(str(config_path), conf_file_path_ext=str(TASK_DIR), use_gui=False)
+        sim = pb.SimInterface(str(config_path), conf_file_path_ext=str(TASK_DIR), use_gui=args.gui)
         client, rid = sim.pybullet_client, sim.bot[0].bot_pybullet
         sim.SetFloorFriction(1.0)
         for j in range(client.getNumJoints(rid)):
@@ -80,6 +119,7 @@ def run(args):
         gru = GRUPolicy(args.gru_model, args.kp, args.kd, args.lead) if args.base == "gru" else None
         if gru is not None:
             gru.reset(q_init)
+        direct = DirectPolicy(args.direct_model) if args.base == "direct" else None
         if uses_expert:
             nav_state, base_params = BaseNavState(), BaseControllerParams(nav_timeout=BASE_NAV_TIMEOUT)
             arm_params = ArmControllerParams(reach_limit=ARM_REACH_LIMIT)
@@ -103,6 +143,7 @@ def run(args):
         push_dir = rng.normal(size=2)
         push_dir = np.append(push_dir / np.linalg.norm(push_dir), 0.0)
         policy_time = []
+        gui = Viewer(client, target, base_pos=scene["base_pos"], label=args.gui_label, speed=args.gui_speed) if args.gui else None
         for step in range(MAX_STEPS):
             base_pos = np.asarray(sim.GetBasePosition())
             base_ori = np.asarray(sim.GetBaseOrientation())
@@ -130,7 +171,12 @@ def run(args):
                 ee = dyn.pin_data.oMf[ee_id].translation.copy()
             started = time.perf_counter()
 
-            if gru is not None:
+            if direct is not None:
+                # Plain BC baseline: the regressor's raw outputs are the commands. "Done" for the
+                # success test uses the same evaluation-only wheel threshold as the GRU without stop head.
+                wheels, torques = direct.act(np.concatenate((base_pos, [yaw], q_mes[4:11], qd_mes[4:11], target)))
+                done = bool(np.max(np.abs(wheels)) < GRU_WHEELS_STOPPED)
+            elif gru is not None:
                 # Ablation: --gravity zero removes the analytic model prior from the torque layer.
                 gravity = (np.zeros(7) if args.gravity == "zero"
                            else pin.computeGeneralizedGravity(dyn.pin_model, dyn.pin_data, q_pin)[6:13])
@@ -148,7 +194,7 @@ def run(args):
                 done = nav_state.done
             if done and done_time is None:
                 done_time, done_pose = t, [*base_pos[:2], yaw]
-            if gru is not None:
+            if gru is not None or direct is not None:
                 pass
             elif our_arm is not None:
                 gravity = pin.computeGeneralizedGravity(dyn.pin_model, dyn.pin_data, q_pin)[6:13]
@@ -195,6 +241,11 @@ def run(args):
                                           ee_world, client.WORLD_FRAME)
             sim.Step(cmd, "torque")
             t += dt
+            if gui is not None and gui.update(t, error, done, success_t):
+                reason = "quit_by_user"
+                break
+        if gui is not None:
+            gui.finish(reason, error, t)
     finally:
         client.disconnect()
 
@@ -234,8 +285,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scene", type=Path, required=True, help="JSON scene (collect_data.py format)")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--base", choices=("ours", "expert", "gru"), required=True)
-    parser.add_argument("--arm", choices=("ours", "expert", "gru"), required=True)
+    parser.add_argument("--base", choices=("ours", "expert", "gru", "direct"), required=True)
+    parser.add_argument("--arm", choices=("ours", "expert", "gru", "direct"), required=True)
+    parser.add_argument("--direct-model", type=Path, help="staged_direct_train.py linear.npz or mlp.npz (--base direct --arm direct)")
     parser.add_argument("--gru-model", type=Path, help="staged_gru_train.py policy (needed for --base gru --arm gru)")
     parser.add_argument("--base-model", type=Path, help="staged_train.py policy.npz (needed for --base ours)")
     parser.add_argument("--arm-model", type=Path, help="arm policy .npz (needed for --arm ours)")
@@ -254,11 +306,16 @@ if __name__ == "__main__":
     parser.add_argument("--perturb-seed", type=int, default=0)
     parser.add_argument("--hold-time", type=float, default=0.0,
                         help="After success keep simulating this long and record the worst EE error (s)")
+    parser.add_argument("--gui", action="store_true", help="Show the PyBullet window, paced to real time")
+    parser.add_argument("--gui-speed", type=float, default=1.0, help="--gui playback speed (2 = twice real time)")
+    parser.add_argument("--gui-label", default="", help="--gui status-line prefix (e.g. the controller name)")
     parser.add_argument("--gravity", choices=("model", "zero"), default="model",
                         help="GRU torque layer: pinocchio gravity compensation (model) or none (zero, ablation)")
     args = parser.parse_args()
     if (args.base == "gru") != (args.arm == "gru") or (args.base == "gru" and args.gru_model is None):
         parser.error("The GRU drives both base and arm: use --base gru --arm gru --gru-model PATH")
+    if (args.base == "direct") != (args.arm == "direct") or (args.base == "direct" and args.direct_model is None):
+        parser.error("The plain regressor drives both base and arm: use --base direct --arm direct --direct-model PATH")
     if args.base == "ours" and args.base_model is None:
         parser.error("--base ours needs --base-model")
     if args.arm == "ours" and args.arm_model is None:

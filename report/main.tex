@@ -22,7 +22,8 @@
 \begin{abstract}
 Behaviour cloning (BC) regresses the expert's action on the current observation. The template expert
 for a mobile manipulator is a two-stage state machine (drive, then reach) whose stage is not observed,
-so we ask what a cloned policy must remember. On identical data, split and scenes we compare three
+so we ask what a cloned policy must remember. Taken literally, an MLP from the raw inputs to the raw
+actions fits the demonstrations ($R^2=0.95$ for torques) yet reaches none of 300 fresh targets. On identical data, split and scenes we compare three
 levels of stage memory: four single-frame MLPs with a hand-coded latch, a GRU that must keep the stage
 in its hidden state, and a GRU with an explicit, latched stop output. They reach 272, 83 and 296 of 300
 fresh scenes (expert: 293). Implicit memory alone fails: in 188 of 300 runs the wheels restart after
@@ -55,8 +56,8 @@ assumption here. First, compounding error: small action errors move the robot to
 demonstrations~\cite{ross2011}. Second, the expert is a state machine. Near the parking pose, a base that
 is still slowing down and a base that has finished look almost the same, yet the expert either keeps
 driving or freezes the wheels and starts reaching. The deciding variable, its stage, is internal, and we
-may not read it. The policy therefore needs memory, and our central question is \emph{what it must
-remember and where that memory should live}. We compare three answers on identical data
+may not read it. The task taken literally, a regressor from the raw inputs to the raw actions, fails
+(Section~\ref{sec:memory}). The policy needs memory, and our central question is \emph{what it must remember and where that memory should live}. We compare three answers on identical data
 (Section~\ref{sec:memory}). A second, independent finding concerns how the policy should act on the arm.
 Every other design choice is backed by an ablation (Table~\ref{tab:ablation}).
 
@@ -166,6 +167,11 @@ architecture; its arm gains come from the same grid and rule on validation (with
 in its original protocol). L1 and L2 were trained after B was frozen, on the same 973 trajectories, and
 no choice used the fresh set.
 
+\textbf{Plain regressors (L0).} To test whether any of this structure is needed, L0 is the task
+taken literally: a regressor from the 21 raw inputs to the 11 raw actions (4 wheel commands, 7 torques),
+applied directly with no features, memory, latch or PD layer. We fit a ridge regressor and an MLP
+(2$\times$128 ReLU) on every fifth frame of the 973 training trajectories.
+
 \subsection{Training}
 The loss is $L=L_\text{wheel}+L_\text{arm}+L_\text{stop}$: MSE on normalised wheel commands, MSE on
 $(Me-v)/\sigma_v$ over frames after $t_\text{stop}$ only (the arm is held before), and BCE on $s_k$.
@@ -195,7 +201,13 @@ selection bias of testing only on scenes the expert solved. All controllers run 
 so we compare them with the exact McNemar test on discordant pairs and report Wilson 95\% intervals.
 
 \subsection{What must the policy remember?}\label{sec:memory}
-Table~\ref{tab:memory} compares the three levels on the 208 validation and 300 fresh scenes.
+Table~\ref{tab:memory} compares L0 and the three levels on the 208 validation and 300 fresh scenes.
+
+\textbf{Plain regressors fail (L0: 0/300).} The L0 MLP fits recorded frames well (validation $R^2$ 0.93
+for wheels, 0.95 for torques), yet it never reaches a target: its closest approach has a median of
+51\,cm, and in the median run 91\% of its steps saturate the actuator limits. Low open-loop error is
+no evidence of a working controller: small torque errors are integrated by the dynamics, the robot
+leaves the demonstrated states~\cite{ross2011}, and the regressor extrapolates to saturated commands.
 
 \textbf{Hidden state only fails (L2: 83/300).} Near the goal the regressed wheel speed approaches zero,
 but nothing makes it \emph{stay} zero: in 188 of 300 runs the wheels start again after first falling
@@ -324,7 +336,8 @@ validation scenes (shaded: Wilson 95\% CI).}
 \end{figure}
 
 \section{Conclusion}
-We asked what a cloned policy must remember. Leaving the expert's stage to a recurrent hidden state
+We asked what a cloned policy must remember. A regressor from the raw inputs to the raw actions fails
+in closed loop despite a good fit. Leaving the expert's stage to a recurrent hidden state
 fails (83/300), because the stage is a discrete, irreversible decision that regression does not commit
 to. A hand-coded latch on single-frame networks recovers most of the performance (272/300), and a
 recurrent policy with an explicit, supervised and latched stop output matches the expert (296 vs 293),
@@ -334,7 +347,7 @@ choice of \emph{what} to remember, \emph{what} to imitate and \emph{how} to act 
 accuracy on recorded data.
 
 \textbf{Limitations.} (i) Training sees only expert states; no DAgger-style aggregation~\cite{ross2011}
-corrects the rare missed latches. (ii) The PD layer, the park-then-reach structure and the latch are fixed,
+corrects the rare wrong stop decisions. (ii) The PD layer, the park-then-reach structure and the latch are fixed,
 and forward kinematics uses the robot model. (iii) The template's first-entry success test hides poor
 damping, which biased our gain selection. (iv) Robustness and OOD tests use 40--60 scenes and one
 perturbation level; only the GRU seed was varied. (v) In the memory study L1 also differs in architecture
