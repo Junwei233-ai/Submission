@@ -254,7 +254,15 @@ To run the frozen models without retraining, use `results/final_run/gru_B_park/g
 
 The frozen B-FK models are `results/final_run/fk_run/fk.npz` (forward kinematics), `fk_run/gru_B_fk/`
 (L3 = B-FK), `fk_run/memory/gru_nostop_fk/` (L2) and `fk_run/memory/fournet_arm_fk/` (L1 arm; its base MLPs
-are in `base/policy.npz`). The GRUs and the L1 arm were trained with `--fk-model results/final_run/fk_run/fk.npz`.
+are in `base/policy.npz`). The GRUs and the L1 arm were trained with `--fk-model results/final_run/fk_run/fk.npz`, using the same
+split and settings as the URDF study (the split's `source` must point to the demonstration collection):
+
+```bash
+FK=results/final_run/fk_run/fk.npz; B=results/final_run/base; O=artifacts/fk_retrain
+$PY staged_gru_train.py --model-dir $B --stop-head --features park --fk-model $FK --output $O/gru_B_fk/gru.npz     # L3 = B-FK
+$PY staged_gru_train.py --model-dir $B --features park --fk-model $FK --output $O/gru_nostop_fk/gru.npz            # L2
+$PY staged_arm_train.py --model-dir $B --fk-model $FK --output $O/fournet_arm_fk/arm.npz                           # L1 arm
+```
 No data collection or training is needed to evaluate them. Each task writes to `artifacts/fk_study/` and copies the
 metrics and per-scene results to `results/final_run/fk_run/`.
 
@@ -396,6 +404,9 @@ bit-identical results), while across platforms 1–3 borderline scenes can flip.
 - **Out of distribution (40 each; B-FK / expert / variant B):** far 40 / 40 / 40; high 17 / 15 / 40;
   low 3 / 30 / 29; wide start 29 / 39 / 38. The learned FK does not extrapolate: at the end of the
   low-target runs its own error has a median of 4.8 cm (high targets 1.8 cm; in distribution 0.2 cm).
+- **FK frame sampling** was chosen on validation from two candidates, with the GRU then trained on URDF e
+  (commit `d60e55f`): all frames every 5 steps gave 196/208, every 2nd frame after the stop and every 20th
+  before gave 198/208 (discordant 2 / 4, not significant); the second is used. The test set was not used.
 - **GRU trained on URDF e, run with the learned FK** (the earlier B-FK, `fk_run/urdf_trained_gru/`):
   198/208 and 288/300 on this machine (289/300 on a team member's machine). Retraining on the learned e
   makes training and run time consistent without changing the fresh-test result.
