@@ -44,7 +44,10 @@ supervised learning on expert trajectories.
 listed measurements, the target, and the robot's kinematic model to compute the end-effector position;
 it may \emph{not} read the expert's internal variables (phase, $q_\text{des}$, navigation state) or call
 the expert at run time. We enforce this in code: learned rollouts abort if the expert module is
-imported. (iii) Success follows the template's \texttt{check\_stop}: base finished, error $<1$\,cm,
+imported. No sensor is added: the end-effector position is computed from \texttt{q\_mes} and the base
+pose by forward kinematics, the same derived signal the expert uses. Force or contact sensing is not
+needed because the task is free-space reaching, and \texttt{qd\_mes} is used only for damping in the PD
+layer (Section~\ref{sec:features}). (iii) Success follows the template's \texttt{check\_stop}: base finished, error $<1$\,cm,
 $t>8$\,s; episodes end at 40\,s.
 
 BC assumes that the expert's action is a function of what the learner observes. Two things break this
@@ -56,6 +59,13 @@ may not read it. The policy therefore needs memory, and our central question is 
 remember and where that memory should live}. We compare three answers on identical data
 (Section~\ref{sec:memory}). A second, independent finding concerns how the policy should act on the arm.
 Every other design choice is backed by an ablation (Table~\ref{tab:ablation}).
+
+\textbf{Related work.} Recent BC methods for manipulation condition on short observation histories and
+predict chunks of future actions, \eg ACT~\cite{zhao2023act} and Diffusion Policy~\cite{chi2023diffusion}.
+History is not free: it can cause causal confusion, where the policy relies on a nuisance correlate of
+the expert's action~\cite{dehaan2019causal}, and the related ``copycat'' problem, where a policy with
+observation histories repeats its previous action~\cite{wen2020copycat}. This motivates asking which
+specific information a policy must remember rather than giving it as much history as possible.
 
 \section{Methodology}
 
@@ -123,6 +133,20 @@ $\tau=K_p(q_\text{ref}-q)+K_d(v-\dot q)+g(q)$; this is how the robot actually re
 \texttt{torque\_arm}. Regressing torques directly instead (same GRU, inputs and stop head) succeeds in
 0/208 validation scenes (Table~\ref{tab:ablation}): small errors in a gravity-dominated signal are
 integrated twice by the dynamics and nothing pulls the arm back.
+What we learn is the \emph{behaviour}: where to drive, when to stop and how to move the arm. The PD
+layer is only the interface that turns a desired velocity into \texttt{torque\_arm}; it contains no
+task knowledge (no target, no IK, no stage), the ablation above shows it is necessary, and its
+model-based term $g(q)$ can even be removed (Section~\ref{sec:ablations}).
+
+\textbf{Learned parking pose (variant B) vs.\ a hand-made feature (v3).} The parking pose is not
+translation invariant: it lies on the origin--target ray. Our baseline v3 encodes this with a world-bearing
+feature $\text{atan2}(t_y,t_x)-\psi$ copied from the expert's code. Variant B instead learns it: an MLP
+(2$\times$128 ReLU, 17,540 parameters) maps the target to the parking pose, which enters the GRU as
+base-frame coordinates. This removes the last expert formula from the inputs.
+
+\textbf{Why these features.}\label{sec:features} The expert's base law uses only relative quantities (distance, heading and
+yaw errors), so all features are expressed in the base frame and angles as $\sin/\cos$. Joint velocities
+are omitted: they are noisy and the PD layer already uses them.
 
 \textbf{Stage memory: three levels.} The stop logit $s_k$ is trained with binary cross-entropy against
 $c_k$ and latched after $N$ consecutive positive outputs, so the stage can never be revisited. To test
@@ -141,16 +165,6 @@ L2 and L3 differ only in the stop head: same inputs, data, training and gains. L
 architecture; its arm gains come from the same grid and rule on validation (with the expert base, as
 in its original protocol). L1 and L2 were trained after B was frozen, on the same 973 trajectories, and
 no choice used the fresh set.
-
-\textbf{Learned parking pose (variant B) vs.\ a hand-made feature (v3).} The parking pose is not
-translation invariant: it lies on the origin--target ray. Our baseline v3 encodes this with a world-bearing
-feature $\text{atan2}(t_y,t_x)-\psi$ copied from the expert's code. Variant B instead learns it: an MLP
-(2$\times$128 ReLU, 17,540 parameters) maps the target to the parking pose, which enters the GRU as
-base-frame coordinates. This removes the last expert formula from the inputs.
-
-\textbf{Why these features.} The expert's base law uses only relative quantities (distance, heading and
-yaw errors), so all features are expressed in the base frame and angles as $\sin/\cos$. Joint velocities
-are omitted: they are noisy and the PD layer already uses them.
 
 \subsection{Training}
 The loss is $L=L_\text{wheel}+L_\text{arm}+L_\text{stop}$: MSE on normalised wheel commands, MSE on
@@ -203,7 +217,10 @@ a wrong stop decision into an irreversible one. Of B's four failures, two are la
 and one fires at $t=0$ with the base 53\,cm from its parking pose; the fourth is an arm that stops
 6\,cm short.
 
-\textbf{Lesson.} In BC, memory should be split by kind. A discrete stage that must never be revisited
+\textbf{Lesson.} In BC, memory should be split by kind, and more memory is not automatically better.
+One plausible reading of L2, which we did not test directly, is that its hidden state tracks a nuisance
+correlate of the stage, such as the current speed, rather than the stage itself, as in causal
+confusion~\cite{dehaan2019causal}. A discrete stage that must never be revisited
 is best learned as an explicit, supervised and latched variable; continuous context (where to park,
 how fast to approach) can stay in a recurrent state.
 
@@ -239,7 +256,7 @@ B and the expert converge; v3 with its chosen $K_d=10$ oscillates.}
 \label{fig:hold}
 \end{figure}
 
-\subsection{Ablations: what makes cloning work}
+\subsection{Ablations: what makes cloning work}\label{sec:ablations}
 Table~\ref{tab:ablation} collects the ablations.
 \begin{itemize}
 \item \textbf{Action representation} decides feasibility: direct torque regression reaches 0/208 (its
@@ -329,13 +346,21 @@ perturbation strength.
 
 \begin{thebibliography}{9}
 \bibitem{pomerleau1989} D.~A. Pomerleau, ``ALVINN: An autonomous land vehicle in a neural network,'' in
-\emph{NeurIPS}, 1989.
+\emph{Advances in Neural Information Processing Systems 1 (NIPS 1988)}, 1989.
 \bibitem{ross2011} S.~Ross, G.~Gordon, and D.~Bagnell, ``A reduction of imitation learning and structured
 prediction to no-regret online learning,'' in \emph{AISTATS}, 2011.
 \bibitem{torabi2018} F.~Torabi, G.~Warnell, and P.~Stone, ``Behavioral cloning from observation,'' in
 \emph{IJCAI}, 2018.
 \bibitem{cho2014} K.~Cho \emph{et al.}, ``Learning phrase representations using RNN encoder--decoder for
 statistical machine translation,'' in \emph{EMNLP}, 2014.
+\bibitem{dehaan2019causal} P.~de~Haan, D.~Jayaraman, and S.~Levine, ``Causal confusion in imitation
+learning,'' in \emph{NeurIPS}, 2019.
+\bibitem{wen2020copycat} C.~Wen, J.~Lin, T.~Darrell, D.~Jayaraman, and Y.~Gao, ``Fighting copycat agents
+in behavioral cloning from observation histories,'' in \emph{NeurIPS}, 2020.
+\bibitem{zhao2023act} T.~Z. Zhao, V.~Kumar, S.~Levine, and C.~Finn, ``Learning fine-grained bimanual
+manipulation with low-cost hardware,'' in \emph{Robotics: Science and Systems (RSS)}, 2023.
+\bibitem{chi2023diffusion} C.~Chi, S.~Feng, Y.~Du, Z.~Xu, E.~Cousineau, B.~Burchfiel, and S.~Song,
+``Diffusion policy: Visuomotor policy learning via action diffusion,'' in \emph{RSS}, 2023.
 \end{thebibliography}
 
 \clearpage
