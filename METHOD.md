@@ -1,7 +1,8 @@
 # Method: GRU behaviour cloning policy
 
-This document describes the final method (variant B) and the baseline (v3). The two are identical
-except for four input features (Section 3). All numbers come from the final run; the result
+This document describes the final method (B-FK), its URDF reference (variant B) and the baseline (v3).
+B-FK and B share the GRU weights and gains, and differ only in where the end-effector position and gravity
+term come from (Section 9.1). B and v3 differ only in four input features (Section 3). All numbers come from the final run; the result
 summaries are in `results/final_run/`.
 
 ```
@@ -207,7 +208,9 @@ After the latch:
 - the torque is `τ = Kp (q_ref − q) + Kd (v − qd) + g(q)`, with g(q) from pinocchio
   (`computeGeneralizedGravity`).
   - v is capped per joint at the largest absolute training label.
-  - The simulator clips wheel speed and torque (±30 N·m).
+  - Arm torques are clipped to the largest magnitude in the training trajectories (30 N·m, written by
+    `compute_torque_limit.py`); the expert clips its torques at the same value. Wheel speed is clipped at a
+    limit derived from the expert's speed parameters.
 
 **Gains.** Kp, Kd and lead are chosen for each model on all 208 validation scenes, from
 Kp ∈ {50, 100, 200} × Kd ∈ {10, 30} × lead ∈ {0.1, 0.2} (`staged_arm_grid.py`).
@@ -224,9 +227,33 @@ Kp ∈ {50, 100, 200} × Kd ∈ {10, 30} × lead ∈ {0.1, 0.2} (`staged_arm_gri
 exceeds the shoulder's gravity load (median recorded torque 17.7 N·m). At 50/30/0.1 (5 N·m) removing
 g(q) drops B to 57/208.
 
+### 9.1 Final method: no robot model in the policy (B-FK)
+
+B-FK replaces both uses of the URDF in the policy:
+
+- **Forward kinematics.** An MLP (`staged_fk_train.py`, `staged_policy.LearnedFK`) maps the 7 joint angles to
+  the end-effector position in the base frame, which is rotated with the measured base pose to get e.
+  - Data: expert runs of the training scenes that continue for 2 s after success, so converged poses are
+    covered. Labels are the recorded end-effector positions.
+  - Frames: every 2nd after the stop time, every 20th before it (the arm barely moves then).
+  - Two hidden layers of 512 ReLU units, 268,291 parameters; MSE, Adam, cosine learning rate, 60 epochs.
+  - Validation error on the final frame: median 2.0 mm, p95 6.2 mm, maximum 15.4 mm.
+- **Gravity.** The term is removed (`--gravity zero`), so `τ = Kp (q_ref − q) + Kd (v − qd)`. The integrated
+  reference acts like an integral term, as described above.
+- **Unchanged.** The GRU and parking MLP weights, the latch and the gains. The GRU was trained on recorded
+  end-effector errors. At run time it receives the MLP's estimate, so an MLP error appears as an error in
+  e, and the arm stops where the estimated error is zero.
+- **Gains.** B's 200/30/0.2 are reused. They were selected with the URDF model and checked on validation
+  with the learned model (198/208), not searched again.
+
+`staged_rollout.py` refuses `--fk-model` without `--gravity zero`. In B-FK, pinocchio is used only to score
+the true end-effector error, which the policy never reads.
+
 ## 10. Evaluation and results
 
-See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summary.md`. In brief:
+See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summary.md`. B-FK's results are
+in README Section 7.1.1 and `results/final_run/fk_run/`: 198/208 on validation and 289/300 on the fresh test.
+The rest of this section reports variant B. In brief:
 
 - **Fresh test** (300 scenes, seed 2026, unfiltered): B 296, v3 289, expert 293. B vs expert p = 0.55;
   B vs v3 p = 0.092.
@@ -249,7 +276,8 @@ See README Section 7 and `results/final_run/suite/summary.md` and `analysis/summ
 | Wheel commands | Latch rule (N consecutive; N chosen on validation) |
 | When to stop (stop logit) | Arm holds before the latch; wheels stop after it |
 | Where to park (B: parking MLP) | PD law; Kp, Kd, lead chosen on validation |
-| Arm velocity map M(e, q) | Forward kinematics (robot model); gravity term (optional at the chosen gains) |
+| Arm velocity map M(e, q) | B and v3 only: forward kinematics and gravity term from the robot model |
+| B-FK: forward kinematics (q → end-effector position) | B-FK: no gravity term |
 | | v3 only: world-bearing feature |
 | | Velocity cap and actuator limits |
 

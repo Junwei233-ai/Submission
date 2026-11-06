@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--base", choices=("ours", "expert", "gru", "direct"), required=True)
     parser.add_argument("--arm", choices=("ours", "expert", "gru", "direct"), required=True)
     parser.add_argument("--direct-model", type=Path, help="Plain BC regressor (staged_direct_train.py)")
+    parser.add_argument("--fk-model", type=Path, help="Learned forward kinematics (staged_fk_train.py); needs --gravity zero")
     parser.add_argument("--gru-model", type=Path)
     parser.add_argument("--arm-model", type=Path)
     parser.add_argument("--latch-steps", type=int)
@@ -123,7 +124,7 @@ def main():
         if args.latch_steps:
             command += ["--latch-steps", str(args.latch_steps)]
         for flag in ("kp", "kd", "lead", "nav_timeout", "obs_noise", "torque_scale", "push_base",
-                     "push_time", "push_ee", "perturb_seed", "gravity", "hold_time"):
+                     "push_time", "push_ee", "perturb_seed", "gravity", "hold_time", "fk_model"):
             if getattr(args, flag) is not None:
                 command += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
         env = dict(os.environ, OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1", VECLIB_MAXIMUM_THREADS="1")

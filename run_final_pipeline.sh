@@ -18,6 +18,7 @@ export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
 BASE=$OUT/base
 
 [ -f "$BASE/split.json" ] || "$PY" staged_train.py --source "${SOURCE:?set SOURCE to the collection dir}" --output "$BASE"
+"$PY" compute_torque_limit.py --model-dir "$BASE"
 for v in v3_bearing:bearing B_park:park; do
   name=${v%%:*}; feat=${v##*:}
   [ -f "$OUT/gru_$name/gru.npz" ] || "$PY" staged_gru_train.py --model-dir "$BASE" --stop-head --features "$feat" \

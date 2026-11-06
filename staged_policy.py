@@ -170,6 +170,26 @@ def gru_park_features(base_pos, yaw, q_arm, ee_pos, target, park_xy, park_yaw):
                            rotate(ee), ee[..., 2:3], np.asarray(q_arm, dtype=float)), axis=-1)
 
 
+def local_position(point, base_pos, yaw):
+    """A world point relative to the base, in the base yaw frame (broadcasts over rows)."""
+    v = np.asarray(point, dtype=float) - np.asarray(base_pos, dtype=float)
+    c, s = np.cos(yaw), np.sin(yaw)
+    return np.stack((c * v[..., 0] + s * v[..., 1], -s * v[..., 0] + c * v[..., 1], v[..., 2]), axis=-1)
+
+
+class LearnedFK:
+    """Learned forward kinematics (staged_fk_train.py): arm joints and base pose -> EE world position."""
+
+    def __init__(self, path):
+        with np.load(path, allow_pickle=False) as data:
+            self.net = NumpyMLP({k: data[k] for k in data.files}, "fk")
+
+    def __call__(self, q_arm, base_pos, yaw):
+        local = self.net(q_arm)
+        c, s = np.cos(yaw), np.sin(yaw)
+        return np.asarray(base_pos, dtype=float) + np.array((c * local[0] - s * local[1], s * local[0] + c * local[1], local[2]))
+
+
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-x))
 

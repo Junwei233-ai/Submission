@@ -18,13 +18,14 @@ ROOT = Path(__file__).resolve().parent
 TASK_DIR = ROOT / "robotnik_arm_task"
 sys.path.insert(0, str(TASK_DIR))
 
-from staged_policy import DirectPolicy, GRUPolicy, StagedArm, StagedBase  # noqa: E402
+from staged_policy import DirectPolicy, GRUPolicy, LearnedFK, StagedArm, StagedBase  # noqa: E402
 
 FINGER_ANGLES = np.full(6, 0.1)
 BASE_NAV_TIMEOUT, ARM_REACH_LIMIT = 25.0, 0.85
 STANDOFF_Z_POINTS, STANDOFF_POINTS = [0.1, 0.5, 1.1, 1.25], [0.80, 0.65, 0.65, 0.35]
 REACH_TOLERANCE, MIN_TIME, MAX_STEPS = 0.01, 8.0, 40000
-WHEEL_LIMIT, TORQUE_LIMIT = (0.25 + 1.0 * 0.66 / 2) / 0.11, 30.0
+WHEEL_LIMIT = (0.25 + 1.0 * 0.66 / 2) / 0.11
+TORQUE_LIMIT = json.loads((ROOT / "torque_limit.json").read_text())["torque_limit"]  # compute_torque_limit.py
 GRU_WHEELS_STOPPED = 0.05  # rad/s; evaluation-only 'base done' threshold for the GRU policy
 
 
@@ -116,6 +117,7 @@ def run(args):
         our_arm = StagedArm(args.arm_model, args.kp, args.kd, args.lead) if args.arm == "ours" else None
         if our_arm is not None:
             our_arm.reset(q_init)
+        learned_fk = LearnedFK(args.fk_model) if args.fk_model else None
         gru = GRUPolicy(args.gru_model, args.kp, args.kd, args.lead) if args.base == "gru" else None
         if gru is not None:
             gru.reset(q_init)
@@ -132,7 +134,7 @@ def run(args):
 
         limits = np.array([WHEEL_LIMIT] * 4 + [TORQUE_LIMIT] * 7)
         cmd = MotorCommands()
-        log = dict(inputs=[], actions=[], ee_error=[], done=[])
+        log = dict(inputs=[], actions=[], ee_error=[], done=[], ee_pos=[])
         done_time = done_pose = first_5cm = None
         clipped, reason, t = 0, "step_limit", 0.0
         success_t = success_error = hold_max = None  # --hold-time: keep simulating after success
@@ -180,7 +182,9 @@ def run(args):
                 # Ablation: --gravity zero removes the analytic model prior from the torque layer.
                 gravity = (np.zeros(7) if args.gravity == "zero"
                            else pin.computeGeneralizedGravity(dyn.pin_model, dyn.pin_data, q_pin)[6:13])
-                wheels, torques = gru.step(base_pos, yaw, q_mes[4:11], qd_mes[4:11], ee, target, gravity, dt)
+                # With --fk-model the policy's EE position is learned; the URDF value above is for scoring only.
+                policy_ee = ee if learned_fk is None else learned_fk(q_mes[4:11], base_pos, yaw)
+                wheels, torques = gru.step(base_pos, yaw, q_mes[4:11], qd_mes[4:11], policy_ee, target, gravity, dt)
                 # With a stop head "base done" is the GRU's own latch. Without one (evaluation only)
                 # it means the GRU is no longer commanding the wheels.
                 done = gru.latched if gru.stop_head else bool(np.max(np.abs(wheels)) < GRU_WHEELS_STOPPED)
@@ -197,8 +201,10 @@ def run(args):
             if gru is not None or direct is not None:
                 pass
             elif our_arm is not None:
-                gravity = pin.computeGeneralizedGravity(dyn.pin_model, dyn.pin_data, q_pin)[6:13]
-                torques = our_arm.step(q_mes[4:11], qd_mes[4:11], ee, target, yaw, gravity, done, dt)
+                gravity = (np.zeros(7) if args.gravity == "zero"
+                           else pin.computeGeneralizedGravity(dyn.pin_model, dyn.pin_data, q_pin)[6:13])
+                policy_ee = ee if learned_fk is None else learned_fk(q_mes[4:11], base_pos, yaw)
+                torques = our_arm.step(q_mes[4:11], qd_mes[4:11], policy_ee, target, yaw, gravity, done, dt)
             else:
                 torques, q_des, _ = arm_controller(dyn, q_pin, q_mes[4:11], qd_mes[4:11], q_des, q_init,
                                                    target, ee, ee_id, shoulder_id, lower, upper, dt,
@@ -215,6 +221,7 @@ def run(args):
             log["actions"].append(action)
             log["ee_error"].append(error)
             log["done"].append(done)
+            log["ee_pos"].append(ee)  # labels for staged_fk_train.py; no policy reads this log
             if first_5cm is None and done and error < 0.05 and t > MIN_TIME:
                 first_5cm = t
             # Same test as check_stop: on the pre-step state, after the minimum time.
@@ -287,6 +294,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--base", choices=("ours", "expert", "gru", "direct"), required=True)
     parser.add_argument("--arm", choices=("ours", "expert", "gru", "direct"), required=True)
+    parser.add_argument("--fk-model", type=Path,
+                        help="staged_fk_train.py network: the policy's EE position instead of the URDF (needs --gravity zero)")
     parser.add_argument("--direct-model", type=Path, help="staged_direct_train.py linear.npz or mlp.npz (--base direct --arm direct)")
     parser.add_argument("--gru-model", type=Path, help="staged_gru_train.py policy (needed for --base gru --arm gru)")
     parser.add_argument("--base-model", type=Path, help="staged_train.py policy.npz (needed for --base ours)")
@@ -310,8 +319,10 @@ if __name__ == "__main__":
     parser.add_argument("--gui-speed", type=float, default=1.0, help="--gui playback speed (2 = twice real time)")
     parser.add_argument("--gui-label", default="", help="--gui status-line prefix (e.g. the controller name)")
     parser.add_argument("--gravity", choices=("model", "zero"), default="model",
-                        help="GRU torque layer: pinocchio gravity compensation (model) or none (zero, ablation)")
+                        help="Arm torque layer: pinocchio gravity compensation (model) or none (zero)")
     args = parser.parse_args()
+    if args.fk_model and (args.gravity != "zero" or args.arm not in ("gru", "ours")):
+        parser.error("--fk-model needs --gravity zero and a learned arm (--arm gru or ours): the policy uses no robot model")
     if (args.base == "gru") != (args.arm == "gru") or (args.base == "gru" and args.gru_model is None):
         parser.error("The GRU drives both base and arm: use --base gru --arm gru --gru-model PATH")
     if (args.base == "direct") != (args.arm == "direct") or (args.base == "direct" and args.direct_model is None):

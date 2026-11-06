@@ -1,6 +1,6 @@
 """One-command demo and check of the submitted policy (no data collection or training needed).
 
-GUI mode (default): plays the frozen policy B in the PyBullet window on a few fresh test scenes, one
+GUI mode (default): plays the frozen final policy B-FK in the PyBullet window on a few fresh test scenes, one
 after another, in real time (red sphere = target; press 'q' in the window to skip a scene), and prints
 whether each scene succeeded. Batch mode (--no-gui): runs a whole scene set headless in parallel and
 prints the success rate next to the number reported in the README.
@@ -10,12 +10,13 @@ Scene sets (all versioned in scenes/, so this runs on any machine with the RoboE
   robustness   the first 60 expert-successful fresh scenes (use with --perturb, e.g. "--push-base 20")
   far_target, high_target, low_target, wide_start   out-of-distribution families (40 scenes each)
 
-Controllers: B (our method, frozen), v3 (baseline, frozen), expert (the template controller).
+Controllers: B-FK (final method: learned forward kinematics, no gravity term), B (the same GRU with the
+URDF forward kinematics and gravity term, for reference), v3 (baseline with the URDF), expert (the template).
 The learned controllers never import the expert module; each result records this
 ("expert_module_loaded": false).
 
 Examples:
-  python demo.py                                   # GUI, B, 3 fresh scenes
+  python demo.py                                   # GUI, B-FK, 3 fresh scenes
   python demo.py --controller expert --scenes 2    # GUI, the expert on the same scenes
   python demo.py --no-gui --set fresh              # all 300 fresh scenes headless (about 2 min on 18 cores)
   python demo.py --no-gui --set high_target --controller expert
@@ -35,7 +36,7 @@ RESULTS = ROOT / "results" / "final_run"
 SETS = {"fresh": "fresh_test", "robustness": "robustness_60", "far_target": "ood/far_target",
         "high_target": "ood/high_target", "low_target": "ood/low_target", "wide_start": "ood/wide_start"}
 # Reported 1 cm successes (README Section 7) for the unperturbed sets, to compare against.
-REPORTED = {("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
+REPORTED = {("B-FK", "fresh"): "289/300", ("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "fresh"): "293/300",
             ("B", "far_target"): "40/40", ("expert", "far_target"): "40/40",
             ("B", "high_target"): "40/40", ("expert", "high_target"): "15/40",
             ("B", "low_target"): "29/40", ("expert", "low_target"): "30/40",
@@ -45,16 +46,17 @@ REPORTED = {("B", "fresh"): "296/300", ("v3", "fresh"): "289/300", ("expert", "f
 def controller_args(name):
     if name == "expert":
         return ["--base", "expert", "--arm", "expert"]
-    model = {"B": "gru_B_park", "v3": "gru_v3_bearing"}[name]
-    grid = {"B": "grid_B_park", "v3": "grid_v3_bearing"}[name]
+    model = {"B-FK": "gru_B_park", "B": "gru_B_park", "v3": "gru_v3_bearing"}[name]
+    grid = {"B-FK": "grid_B_park", "B": "grid_B_park", "v3": "grid_v3_bearing"}[name]
     chosen = json.loads((RESULTS / grid / "grid.json").read_text())["chosen"]
-    return ["--base", "gru", "--arm", "gru", "--gru-model", str(RESULTS / model / "gru.npz"),
+    learned = ["--fk-model", str(RESULTS / "fk_run" / "fk.npz"), "--gravity", "zero"] if name == "B-FK" else []
+    return ["--base", "gru", "--arm", "gru", "--gru-model", str(RESULTS / model / "gru.npz"), *learned,
             "--kp", str(chosen["kp"]), "--kd", str(chosen["kd"]), "--lead", str(chosen["lead"])]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--controller", choices=("B", "v3", "expert"), default="B")
+    parser.add_argument("--controller", choices=("B-FK", "B", "v3", "expert"), default="B-FK")
     parser.add_argument("--set", choices=sorted(SETS), default="fresh")
     parser.add_argument("--scenes", type=int, help="Number of scenes (default: 3 with GUI, all without)")
     parser.add_argument("--scene-id", help="Run one scene by id, e.g. scene_2026_0008")
