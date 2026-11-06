@@ -325,8 +325,6 @@ with the analytic FK and $g(q)$, before the robot model was removed.
 296/300 (fresh: 2 vs 10 discordant, $p=0.04$). Removing the robot model costs about three points, and
 the cost is the FK network's error: eight of the ten extra failures come no closer than 1.1--2.4\,cm,
 where the network already believes the error is zero.
-\item \textbf{FK labels:} training the FK only on converged expert poses, with the target as label,
-avoids recorded end-effector positions entirely but reaches 184/208 (vs 200).
 \item \textbf{Training on the error the policy sees:} a GRU trained on URDF $e$ but run with the learned
 FK reaches 198/208 and 288/300, close to B-FK (200, 288): retraining matters for consistency, not success.
 \item \textbf{Action representation} decides feasibility: direct torque regression reaches 0/208 (its
